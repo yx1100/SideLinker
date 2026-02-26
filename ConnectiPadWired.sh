@@ -2,7 +2,7 @@
 
 # ================= 配置区域 =================
 # 你的 SidecarLauncher 绝对路径 (请确保路径无误)
-LAUNCHER="/Users/dmer/github.com/SidecarLauncher/SidecarLauncher/SidecarLauncher"
+LAUNCHER="/Users/user1/github.com/SidecarLauncher/SidecarLauncher/SidecarLauncher"
 
 # ================= 执行区域 =================
 
@@ -13,7 +13,7 @@ LAUNCHER="/Users/dmer/github.com/SidecarLauncher/SidecarLauncher/SidecarLauncher
 
 # 方案 B：指定模式 (备选)
 # 如果你只想连特定设备，请把上面那行注释掉，用下面这行：
-# "$LAUNCHER" connect "Dmer Cc的iPad"
+# "$LAUNCHER" connect "yours iPad"
 
 # ===========================================
 # 脚本执行完毕后，如果是 .command 文件运行的，
