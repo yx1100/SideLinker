@@ -27,15 +27,11 @@
 
 1.  **下载**：[BetterDisplay 官方 Release](https://github.com/waydabber/BetterDisplay/releases)。
 2.  **创建虚拟屏**：在菜单中选择 `新建虚拟屏幕`。
-<img width="596" height="1294" alt="image" src="https://github.com/user-attachments/assets/62bacbbf-cd96-4835-9bd6-af223d5066d4" />
-<img width="1792" height="690" alt="image" src="https://github.com/user-attachments/assets/40b0a965-5606-43b7-ad35-ccbc5aeeb8fc" />
 3.  **虚拟屏默认设置为镜像**：如果没有任何显示器，iPad 连接后会自动变为主显示器
-<img width="968" height="884" alt="image" src="https://github.com/user-attachments/assets/ee3c8666-effb-49fb-a3b6-63ec9d116e28" />
-3.  **核心配置**：
-    * 允许 **"登录时打开"**。
-    * **“隐私与安全性”** 开启 **“辅助功能”**
+4.  **核心配置**：
+    * 允许 **"登录时打开-BetterDisplay"**。
+    * 开启 **“隐私与安全性-辅助功能-BetterDisplay”**
     * 打开 **设置-通用-共享-远程登录**
-<img width="492" height="151" alt="image" src="https://github.com/user-attachments/assets/9e14bf08-67fd-478b-ab71-c32225404bb5" />
 
 ---
 
