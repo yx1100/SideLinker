@@ -54,7 +54,8 @@
     ```bash
     /你的路径/SidecarLauncher connect
     ```
-3.  保存为 `ConnectiPadWired.app` 并放入 `/Applications`。
+3.  或者复制项目中 `ConnectiPadWired.sh` 的内容放进去
+4.  保存为 `ConnectiPadWired.app` 并放入 `/Applications`。
 
 ---
 
