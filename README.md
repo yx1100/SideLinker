@@ -1,69 +1,31 @@
-# 🚀 SideLinker (Advanced) - The Ultimate Sidecar Solution for Headless Mac mini
+# SideLinker
 
 **English** | [简体中文](./README.zh-CN.md)
 
-> **Designed for Headless Mac mini / Mac Studio Users.**
-> "The Sidecar Bridge": Based on the `SidecarCore` private framework, featuring automatic wired/wireless reconnection, blind device detection, and native system notifications.
+A menu bar app that uses an iPad as the Mac's screen in three situations, detected automatically:
 
----
+| Situation | Detected when | What SideLinker does |
+|---|---|---|
+| Desk Sidecar | The Mac has displays attached | Nothing; use the built-in Sidecar as usual |
+| Portable Sidecar | No display is attached (e.g. a Mac mini on the road) | Connects Sidecar to the iPad at login, making it the only screen |
+| UU Remote | NetEase UU Remote connects from the iPad | Creates a virtual display matching the iPad (2752×2064 for a 13-inch iPad Pro), turns the physical displays off, and restores them 60 seconds after the session ends |
 
-## 🌟 Key Features
+It uses macOS frameworks and private APIs (SidecarCore, CGVirtualDisplay, CGSConfigureDisplayEnabled) and does not need BetterDisplay.
 
-* **🔌 Exclusive "Blind Connect" Mode**: Auto-detects and connects to the wired iPad without needing a device name.
-* **🔄 Smart Retry Mechanism**: Built-in 10-loop retry logic to handle slow system service boot-up.
-* **⚖️ Dual-Mode Switching**: Prioritizes **Wired Connection (`-wired`)** for zero latency, falling back to wireless automatically.
-* **🚀 Permission Fix**: Wrapped in an Automator App to bypass SSH `Operation not permitted` errors.
+## Install
 
----
+Requires macOS 14+ and Xcode or the Command Line Tools.
 
-## 🖥️ Step 1: Prerequisite - Configure Virtual Display (BetterDisplay)
+```bash
+./build.sh install
+```
 
-> **⚠️ CRITICAL: This step MUST be completed while connected to a [Physical Monitor].**
-> Otherwise, the GPU might not output correctly after unplugging HDMI, causing Sidecar to crash.
+Allow notifications on first launch, then enable "登录时启动" (Launch at Login) from the menu and approve it in System Settings → General → Login Items & Extensions.
 
-We use **BetterDisplay** to create a virtual "Primary Display".
+## Notes
 
-1.  **Download**: [BetterDisplay Release](https://github.com/waydabber/BetterDisplay/releases).
-2.  **Create Virtual Screen**: Choose `Create New Virtual Screen` from the menu.
-3.  **Key Settings**:
-    * Enable **"Start at login"**.
-    * Set virtual screen to **"Connect on startup"** and as **"Main Display"**.
-    * Enable **HiDPI** for Retina-grade clarity.
+- Wireless Sidecar needs Wi-Fi, Bluetooth and Handoff turned on, but no router or internet. Do not turn on the iPad's Personal Hotspot; Apple's Sidecar requirements say the iPad must not share its cellular connection. A USB-C cable is the most reliable option without Wi-Fi.
+- A headless Mac can only start Sidecar after login. With FileVault on, automatic login is unavailable, so either turn FileVault off and enable automatic login, or type the password blind with a keyboard.
+- UU session detection reads UU's log files and was verified with UU 4.38.
 
----
-
-## 🛠️ Step 2: Installation
-
-Pre-compiled binary is available.
-
-1.  **Download**: Get `SidecarLauncher` from the Releases page.
-2.  **Manual Compile**:
-    ```bash
-    swiftc main.swift -o SidecarLauncher
-    ```
-
----
-
-## 📦 Step 3: Wrap as an App (The Permission Fix)
-
-1.  Open **Automator** -> New **Application**.
-2.  Add **Run Shell Script**:
-    ```bash
-    /your/path/to/SidecarLauncher connect
-    ```
-3.  Save as `ConnectiPadWired.app` in `/Applications`.
-4.  Ensure the App has **Bluetooth** and **Local Network** permissions in `System Settings`.
-
----
-
-## 📱 Step 4: iPad Shortcuts Setup
-
-Create a Shortcut on your iPad:
-* **Action**: Run Script Over SSH
-* **Script**: `open -a ConnectiPadWired`
-
----
-
-## 🔌 Advanced: Direct Connection
-
-Connect your iPad directly to the Mac via USB and run the shortcut. With **Blind Connect** enabled, the script identifies the USB link and ignites the screen instantly.
+See the [Chinese README](./README.zh-CN.md) for details, debugging commands and known limitations.
