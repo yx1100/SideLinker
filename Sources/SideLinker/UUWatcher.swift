@@ -61,41 +61,34 @@ final class UUWatcher {
     }
 }
 
-/// 远程单屏的进入/退出判定：会话开始就进入；断开满 grace 秒才退出，避免掉线重连时来回切换
+/// 远程单屏的自动退出判定：只能手动进入；UU 断开满 grace 秒后退出，避免掉线重连时来回切换。
+/// 进入时没有 UU 会话也按断开计时，物理屏不会一直关着
 struct RemoteGate {
     let grace: TimeInterval
     private(set) var active = false
     private var lostAt: Date?
-    private var suppressed = false // 会话中手动退出后，本次会话内不再自动进入
 
-    /// 返回 true 表示应进入，false 表示应退出，nil 表示不变
-    mutating func update(session: Bool, now: Date, autoEnter: Bool = true) -> Bool? {
+    /// 返回 true 表示应退出
+    mutating func update(session: Bool, now: Date) -> Bool {
+        guard active else { return false }
         if session {
             lostAt = nil
-            guard autoEnter, !active, !suppressed else { return nil }
-            active = true
-            return true
+            return false
         }
-        suppressed = false
-        guard active else { return nil }
         let since = lostAt ?? now
         lostAt = since
-        guard now.timeIntervalSince(since) >= grace else { return nil }
-        active = false
-        lostAt = nil
-        return false
+        guard now.timeIntervalSince(since) >= grace else { return false }
+        exit()
+        return true
     }
 
-    /// 手动进入。没有会话时同样在 grace 秒后退出，物理屏不会一直关着
-    mutating func manualEnter() {
+    mutating func enter() {
         active = true
         lostAt = nil
-        suppressed = false
     }
 
-    mutating func manualExit(session: Bool) {
+    mutating func exit() {
         active = false
         lostAt = nil
-        suppressed = session
     }
 }
