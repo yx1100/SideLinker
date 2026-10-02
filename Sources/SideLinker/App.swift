@@ -11,8 +11,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let uu = UUWatcher()
     private var gate = RemoteGate(grace: 60)
     private var remoteScreen: VirtualScreen?
+    private var lockAfterRestore = false // UU 会话结束后恢复物理屏，再锁屏
+    private var stableModes: [CGDirectDisplayID: Int32] = [:] // 持续 10 秒没变的分辨率，恢复时用
+    private var pendingModes: [CGDirectDisplayID: Int32] = [:]
+    private var pendingSince = Date()
     private var busy = false // 显示配置切换中，暂停自动判断
     private var sigterm: DispatchSourceSignal?
+
+    /// 单屏是否在生效：虚拟屏还在，或物理屏还关着（例如 App 崩溃后重启）
+    private var remoteApplied: Bool { remoteScreen != nil || Displays.hasSavedLayout }
 
     // 便携随航状态
     private var portable = false
@@ -47,13 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sigterm?.setEventHandler { NSApp.terminate(nil) }
         sigterm?.resume()
 
-        // 上次异常退出时物理屏可能还关着，先恢复
-        busy = true
-        work.async {
-            var none: VirtualScreen?
-            Displays.restore(releasing: &none)
-            DispatchQueue.main.async { self.busy = false }
-        }
+        // 上次异常退出时物理屏可能还关着：remoteApplied 为真，tickRemote 会按当前 UU 状态恢复或重新进入
         uu.onPoll = { [weak self] in self?.tickRemote() }
         uu.start()
         Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.evaluatePortable() }
@@ -63,15 +64,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var screen = remoteScreen
         remoteScreen = nil
         work.sync {
-            if Displays.hasSavedLayout || screen != nil { Displays.restore(releasing: &screen) }
+            if Displays.hasSavedLayout || screen != nil { _ = Displays.restore(releasing: &screen) }
         }
     }
 
     // MARK: 远程单屏
 
+    /// 每 2 秒对齐一次：gate 决定要不要单屏，锁屏时 macOS 不允许改显示配置，等解锁后再补做
     private func tickRemote() {
-        guard !busy, let enter = gate.update(session: uu.connected, now: Date(), autoEnter: autoEnabled) else { return }
-        enter ? enterRemote() : exitRemote()
+        // UU 连入前约 1 秒会改主屏分辨率，断开时显示器还关着，它改不回去，所以平时记下稳定的分辨率
+        if !gate.active && !remoteApplied && !uu.connected {
+            let modes = Displays.modeIDs(of: Displays.online())
+            if modes != pendingModes {
+                pendingModes = modes
+                pendingSince = Date()
+            } else if Date().timeIntervalSince(pendingSince) >= 10 {
+                stableModes = modes
+            }
+        }
+        _ = gate.update(session: uu.connected, now: Date(), autoEnter: autoEnabled)
+        if gate.active && uu.connected { lockAfterRestore = true }
+        let locked = Session.isLocked
+        if locked && !gate.active { lockAfterRestore = false } // 已被锁过（如 UU 自动锁屏），解锁后不再重复锁
+        guard !busy, !locked else { return }
+        if gate.active && remoteScreen == nil {
+            enterRemote()
+        } else if !gate.active && remoteApplied {
+            exitRemote()
+        }
     }
 
     private func enterRemote() {
@@ -84,8 +104,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         remoteScreen = screen
         busy = true
+        let modes = stableModes
         work.async {
-            let allOff = Displays.enterSingleScreen(screen)
+            let allOff = Displays.enterSingleScreen(screen, modes: modes)
             DispatchQueue.main.async {
                 self.busy = false
                 self.notify(allOff ? "已切换为 iPad 单屏" : "部分显示器无法关闭，已改为镜像 iPad 单屏")
@@ -98,10 +119,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         remoteScreen = nil
         busy = true
         work.async {
-            Displays.restore(releasing: &screen)
+            let restored = Displays.restore(releasing: &screen)
             DispatchQueue.main.async {
                 self.busy = false
+                guard restored else {
+                    self.remoteScreen = screen // 恢复途中被锁屏：留着虚拟屏，解锁后重试
+                    return
+                }
                 self.notify("已恢复物理显示器")
+                if self.lockAfterRestore { Session.lock() }
+                self.lockAfterRestore = false
             }
         }
     }
@@ -109,7 +136,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: 便携随航
 
     private func evaluatePortable() {
-        guard !busy, !connecting, !gate.active else { return }
+        // 远程单屏关掉的物理屏不算「没有显示器」
+        guard !busy, !connecting, !gate.active, !remoteApplied else { return }
         let sidecarOn = !Sidecar.connected().isEmpty
         let displays = Set(Displays.online()).subtracting([dummy?.id, remoteScreen?.id].compactMap { $0 })
 
@@ -192,7 +220,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         let connected = Sidecar.connected()
-        let status = gate.active ? "远程单屏中"
+        let status = remoteApplied ? (gate.active ? "远程单屏中" : "等待恢复物理屏")
             : connected.first.map { "随航已连接：\(Sidecar.name($0))" }
             ?? (connecting ? "正在连接随航…" : portable ? "等待连接随航" : "空闲")
         menu.addItem(withTitle: status, action: nil, keyEquivalent: "").isEnabled = false
@@ -242,11 +270,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func toggleRemote() {
         if gate.active {
             gate.manualExit(session: uu.connected)
-            exitRemote()
+            lockAfterRestore = false
         } else {
             gate.manualEnter()
-            enterRemote()
         }
+        tickRemote()
     }
 
     @objc private func toggleLogin() {

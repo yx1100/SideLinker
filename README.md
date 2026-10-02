@@ -27,5 +27,6 @@ Allow notifications on first launch, then enable "登录时启动" (Launch at Lo
 - Wireless Sidecar needs Wi-Fi, Bluetooth and Handoff turned on, but no router or internet. Do not turn on the iPad's Personal Hotspot; Apple's Sidecar requirements say the iPad must not share its cellular connection. A USB-C cable is the most reliable option without Wi-Fi.
 - A headless Mac can only start Sidecar after login. With FileVault on, automatic login is unavailable, so either turn FileVault off and enable automatic login, or type the password blind with a keyboard.
 - UU session detection reads UU's log files and was verified with UU 4.38.
+- Turn off UU's "lock after remote session ends" option. macOS refuses display changes while the screen is locked, so SideLinker restores the displays first and then locks the Mac itself. If UU locks first, the displays stay dark until you unlock (blind password entry or Touch ID).
 
 See the [Chinese README](./README.zh-CN.md) for details, debugging commands and known limitations.

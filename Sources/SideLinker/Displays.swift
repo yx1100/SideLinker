@@ -29,7 +29,21 @@ final class VirtualScreen {
     }
 }
 
-/// 显示器配置。会轮询等待配置生效，只能在后台队列调用
+enum Session {
+    /// 锁屏时 macOS 拒绝修改显示器配置（CGCompleteDisplayConfiguration 返回 1014）
+    static var isLocked: Bool {
+        (CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool ?? false
+    }
+
+    /// 立即锁屏（私有接口 login.framework）
+    static func lock() {
+        guard let handle = dlopen("/System/Library/PrivateFrameworks/login.framework/Versions/Current/login", RTLD_LAZY),
+              let symbol = dlsym(handle, "SACLockScreenImmediate") else { return }
+        _ = unsafeBitCast(symbol, to: (@convention(c) () -> Int32).self)()
+    }
+}
+
+/// 显示器配置。enterSingleScreen、restore、mirror 会轮询等待配置生效，只能在后台队列调用
 enum Displays {
     private static let savedKey = "savedLayout" // [[displayID, x, y]]，非空表示有显示器被本 App 关闭
 
@@ -37,15 +51,27 @@ enum Displays {
     static func online() -> [CGDirectDisplayID] { list(CGGetOnlineDisplayList) }
     static func active() -> [CGDirectDisplayID] { list(CGGetActiveDisplayList) }
 
-    /// 远程单屏：虚拟屏切到 HiDPI 模式并设为主屏，关闭其余所有显示器；关不掉的改为镜像虚拟屏。返回是否全部关闭
-    static func enterSingleScreen(_ screen: VirtualScreen) -> Bool {
+    /// 各显示器当前分辨率模式的 ID
+    static func modeIDs(of ids: [CGDirectDisplayID]) -> [CGDirectDisplayID: Int32] {
+        var result: [CGDirectDisplayID: Int32] = [:]
+        for id in ids { result[id] = CGDisplayCopyDisplayMode(id)?.ioDisplayModeID }
+        return result
+    }
+
+    /// 远程单屏：虚拟屏切到 HiDPI 模式并设为主屏，关闭其余所有显示器；关不掉的改为镜像虚拟屏。返回是否全部关闭。
+    /// modes 是连接前稳定的分辨率：UU 连入时会先改主屏分辨率，恢复时要用之前的
+    static func enterSingleScreen(_ screen: VirtualScreen, modes: [CGDirectDisplayID: Int32]) -> Bool {
         wait(5) { active().contains(screen.id) }
         let others = online().filter { $0 != screen.id }
-        let layout = others.map { id -> [Int] in
-            let origin = CGDisplayBounds(id).origin
-            return [Int(id), Int(origin.x), Int(origin.y)]
+        // App 崩溃后重新进入时，物理屏还关着，保留原来记录的布局
+        if !hasSavedLayout {
+            let layout = others.map { id -> [Int] in
+                let origin = CGDisplayBounds(id).origin
+                let mode = modes[id] ?? CGDisplayCopyDisplayMode(id)?.ioDisplayModeID ?? -1
+                return [Int(id), Int(origin.x), Int(origin.y), Int(mode)]
+            }
+            UserDefaults.standard.set(layout, forKey: savedKey)
         }
-        UserDefaults.standard.set(layout, forKey: savedKey)
 
         configure { config in
             if let mode = largestHiDPIMode(of: screen.id) { CGConfigureDisplayWithDisplayMode(config, screen.id, mode, nil) }
@@ -61,8 +87,9 @@ enum Displays {
         return false
     }
 
-    /// 打开被关闭的显示器、取消镜像、恢复原排列，再释放虚拟屏。App 异常退出后重新启动时也会调用
-    static func restore(releasing screen: inout VirtualScreen?) {
+    /// 打开被关闭的显示器、取消镜像、恢复原排列，再释放虚拟屏。
+    /// 返回 false 表示锁屏挡住了恢复：此时保留虚拟屏和记录的布局，解锁后再调用
+    static func restore(releasing screen: inout VirtualScreen?) -> Bool {
         let saved = UserDefaults.standard.array(forKey: savedKey) as? [[Int]] ?? []
         let ids = saved.map { CGDirectDisplayID($0[0]) }
         if !ids.isEmpty {
@@ -70,6 +97,8 @@ enum Displays {
             ids.filter { !online().contains($0) }.forEach { id in configure { _ = CGSConfigureDisplayEnabled($0, id, true) } }
             // 外接屏重新点亮可能要 10 秒以上；亮起后再释放虚拟屏，避免出现一块显示器都没有的瞬间
             wait(20) { Set(ids).isSubset(of: online()) }
+            // 一块都没回来且处于锁屏：不能释放虚拟屏。未锁屏时一块都没回来，说明显示器已被拔掉
+            if !ids.contains(where: online().contains) && Session.isLocked { return false }
             let mirrored = ids.filter { CGDisplayMirrorsDisplay($0) != kCGNullDirectDisplay }
             if !mirrored.isEmpty {
                 configure { config in mirrored.forEach { CGConfigureDisplayMirrorOfDisplay(config, $0, kCGNullDirectDisplay) } }
@@ -79,12 +108,27 @@ enum Displays {
             screen = nil
             wait(5) { !online().contains(id) }
         }
-        guard !saved.isEmpty else { return }
+        guard !saved.isEmpty else { return true }
         let present = saved.filter { online().contains(CGDirectDisplayID($0[0])) }
-        configure { config in
-            present.forEach { CGConfigureDisplayOrigin(config, CGDirectDisplayID($0[0]), Int32($0[1]), Int32($0[2])) }
+        // 分辨率和位置一起设：只设位置时，系统会把 UU 在会话中改过的分辨率重新套用回来。设完核对一次，不对再设
+        for _ in 0..<2 {
+            configure { config in
+                for row in present {
+                    let id = CGDirectDisplayID(row[0])
+                    if row.count > 3, let mode = mode(of: id, withID: Int32(row[3])) {
+                        CGConfigureDisplayWithDisplayMode(config, id, mode, nil)
+                    }
+                    CGConfigureDisplayOrigin(config, id, Int32(row[1]), Int32(row[2]))
+                }
+            }
+            Thread.sleep(forTimeInterval: 3)
+            let modesMatch = present.allSatisfy {
+                $0.count <= 3 || $0[3] < 0 || CGDisplayCopyDisplayMode(CGDirectDisplayID($0[0]))?.ioDisplayModeID == Int32($0[3])
+            }
+            if modesMatch { break }
         }
         UserDefaults.standard.removeObject(forKey: savedKey)
+        return true
     }
 
     /// 把 display 设为 master 的镜像；master 传 kCGNullDirectDisplay 取消镜像
@@ -93,9 +137,16 @@ enum Displays {
     }
 
     private static func largestHiDPIMode(of id: CGDirectDisplayID) -> CGDisplayMode? {
+        allModes(of: id).filter { $0.pixelWidth == $0.width * 2 }.max { $0.pixelWidth < $1.pixelWidth }
+    }
+
+    private static func mode(of id: CGDirectDisplayID, withID modeID: Int32) -> CGDisplayMode? {
+        allModes(of: id).first { $0.ioDisplayModeID == modeID }
+    }
+
+    private static func allModes(of id: CGDirectDisplayID) -> [CGDisplayMode] {
         let options = [kCGDisplayShowDuplicateLowResolutionModes: kCFBooleanTrue] as CFDictionary
-        let modes = CGDisplayCopyAllDisplayModes(id, options) as? [CGDisplayMode] ?? []
-        return modes.filter { $0.pixelWidth == $0.width * 2 }.max { $0.pixelWidth < $1.pixelWidth }
+        return CGDisplayCopyAllDisplayModes(id, options) as? [CGDisplayMode] ?? []
     }
 
     private static func configure(_ body: (CGDisplayConfigRef) -> Void) {
