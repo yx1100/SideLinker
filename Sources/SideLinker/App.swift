@@ -124,7 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.async {
                 self.busy = false
                 self.refreshIcon()
-                if !allOff { self.notify("部分显示器无法关闭，已改为镜像 iPad 单屏，这些显示器仍会显示画面") }
+                if !allOff { self.notify("部分显示器无法关闭，已改为镜像") }
             }
         }
     }
@@ -256,11 +256,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let (title, detail): (String, String)
         switch currentState() {
-        case .remote: (title, detail) = ("iPad 单屏中", uu.connected ? "UU 断开 30 秒后自动恢复并锁屏" : "未检测到 UU 连接，30 秒后自动恢复")
-        case .restoring: (title, detail) = ("正在恢复物理显示器", Session.isLocked ? "解锁后继续" : "请稍候")
+        case .remote: (title, detail) = ("iPad 单屏中", "")
+        case .restoring: (title, detail) = ("正在恢复物理显示器", Session.isLocked ? "解锁后继续" : "")
         case .sidecar(let name): (title, detail) = ("随航已连接", name)
-        case .connecting: (title, detail) = ("正在连接随航…", "先试有线，再试无线")
-        case .waiting: (title, detail) = ("等待 iPad", "没有显示器，正在自动连接随航")
+        case .connecting: (title, detail) = ("正在连接随航…", "")
+        case .waiting: (title, detail) = ("等待 iPad", "")
         case .idle: (title, detail) = ("就绪", "")
         }
         let status = item(title, nil, symbol: nil, detail: detail)
@@ -275,41 +275,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for device in devices {
             let isOn = connected.contains(device)
             let deviceItem = item(Sidecar.name(device), nil, symbol: isOn ? "ipad.landscape.badge.play" : "ipad.landscape",
-                                  detail: isOn ? "已连接" : "未连接，可在控制中心的「屏幕镜像」里连接")
+                                  detail: isOn ? "已连接" : "未连接")
             deviceItem.isEnabled = false
             menu.addItem(deviceItem)
         }
         if devices.isEmpty {
-            let none = item("附近没有可用的 iPad", nil, symbol: "ipad.landscape", detail: "确认 iPad 已解锁，并登录同一 Apple 账户")
+            let none = item("附近没有可用的 iPad", nil, symbol: "ipad.landscape", detail: "")
             none.isEnabled = false
             menu.addItem(none)
         }
-        menu.addItem(item("没有显示器时自动连接", #selector(toggleAuto), symbol: nil,
-                          detail: "适合带 Mac mini 出门；想断开随航时先关掉它，否则 10 秒后会自动重连", checked: autoEnabled))
+        menu.addItem(item("没有显示器时自动连接", #selector(toggleAuto), symbol: nil, detail: "", checked: autoEnabled))
 
         menu.addItem(.separator())
         menu.addItem(.sectionHeader(title: uu.connected ? "UU 远程 · 已连接" : "UU 远程 · 未连接"))
-        // 单屏只在 UU 连接中有意义：未连接时只显示说明
+        // 单屏只在 UU 连接中有意义
         if gate.active {
-            menu.addItem(item("恢复物理显示器", busy ? nil : #selector(toggleRemote), symbol: "display.2", detail: "退出单屏，不锁屏"))
+            menu.addItem(item("恢复物理显示器", busy ? nil : #selector(toggleRemote), symbol: "display.2", detail: ""))
         } else if uu.connected {
             menu.addItem(item("切换到 iPad 单屏", busy || remoteApplied ? nil : #selector(toggleRemote), symbol: "rectangle.inset.filled",
-                              detail: "只保留一块 2752×2064 的屏幕，关闭其他显示器"))
-        } else {
-            let hint = item("iPad 单屏", nil, symbol: "rectangle.inset.filled", detail: "用 UU 远程连入后可在这里切换")
-            hint.isEnabled = false
-            menu.addItem(hint)
+                              detail: ""))
         }
         if uu.connected {
             for (id, alias) in uu.controllers.sorted(by: { $0.value < $1.value }) {
                 let device = item("\(alias) 连入时自动切换", #selector(toggleAutoDevice(_:)), symbol: nil,
-                                  detail: "只对这台设备生效，其他设备连入时不切换", checked: autoDevices.contains(id))
+                                  detail: "", checked: autoDevices.contains(id))
                 device.representedObject = id
                 menu.addItem(device)
             }
         } else if !autoDevices.isEmpty {
-            menu.addItem(item("已记住 \(autoDevices.count) 台设备，连入时自动切换", #selector(forgetAutoDevices), symbol: nil,
-                              detail: "点按全部忘记"))
+            menu.addItem(item("忘记自动切换的设备（\(autoDevices.count) 台）", #selector(forgetAutoDevices), symbol: nil, detail: ""))
         }
 
         menu.addItem(.separator())
