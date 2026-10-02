@@ -6,7 +6,7 @@ import UserNotifications
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let defaults = UserDefaults.standard
     private let work = DispatchQueue(label: "sidelinker.work") // 显示配置和随航连接都会阻塞等待，串行放在这里
-    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let agent = SMAppService.agent(plistName: "com.yx1100.sidelinker.plist")
     private let uu = UUWatcher()
     private var gate = RemoteGate(grace: 30) // UU 日志里见过断开 22 秒后又连上，30 秒内重连不来回切换
@@ -247,7 +247,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .connecting, .waiting: name = "ipad.and.arrow.forward"
         case .idle: name = "ipad.landscape"
         }
-        statusItem.button?.image = NSImage(systemSymbolName: name, accessibilityDescription: "SideLinker")
+        guard let image = NSImage(systemSymbolName: name, accessibilityDescription: "SideLinker") else { return }
+        // 高度 16pt，宽度等比例
+        image.size = NSSize(width: image.size.width * 16 / image.size.height, height: 16)
+        image.isTemplate = true
+        statusItem.button?.image = image
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
