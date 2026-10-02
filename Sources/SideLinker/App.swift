@@ -30,7 +30,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var portableSince = Date()
     private var nextAttempt = Date.distantPast
     private var connecting = false
-    private var reconnectPaused = false
 
     /// 连入时自动切换单屏的设备 ID
     private var autoDevices: Set<String> {
@@ -183,7 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         if !extra.isEmpty {
             leavePortable()
-        } else if !reconnectPaused, Date() >= nextAttempt {
+        } else if Date() >= nextAttempt {
             connectSidecar()
         }
     }
@@ -193,7 +192,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         self.baseline = baseline
         portableSince = Date()
         nextAttempt = .distantPast
-        reconnectPaused = false
         // 原作者发现完全无屏时随航不稳定，先放一块占位屏；实测不需要可用 noDummy 关掉
         if !defaults.bool(forKey: "noDummy") {
             dummy = VirtualScreen(name: "SideLinker 占位屏", width: 1920, height: 1080, ppi: 92, productID: 2)
@@ -208,12 +206,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         dummy = nil
     }
 
-    /// device 为空时按「上次连上的设备优先」依次尝试
-    private func connectSidecar(_ device: NSObject? = nil) {
+    /// 按「上次连上的设备优先」依次尝试
+    private func connectSidecar() {
         connecting = true
         let preferred = defaults.string(forKey: "preferredDevice")
         work.async {
-            let all = device.map { [$0] } ?? Sidecar.devices()
+            let all = Sidecar.devices()
             let ordered = all.filter { Sidecar.identifier($0) == preferred } + all.filter { Sidecar.identifier($0) != preferred }
             let connected = Sidecar.connectFirst(of: ordered)
             DispatchQueue.main.async {
@@ -225,8 +223,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self.notify("随航已连接：\(Sidecar.name(connected))")
                     self.evaluatePortable()
                     self.refreshIcon()
-                } else if device != nil {
-                    self.notify("随航连接失败")
                 }
             }
         }
@@ -275,12 +271,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.sectionHeader(title: "随航"))
         let connected = Sidecar.connected()
         let devices = Sidecar.devices()
+        // 只显示状态：手动连接、断开用控制中心
         for device in devices {
             let isOn = connected.contains(device)
-            let deviceItem = item(Sidecar.name(device), connecting || busy ? nil : #selector(toggleDevice(_:)),
-                                  symbol: "ipad.landscape", detail: isOn ? "已连接，点按断开" : "点按连接")
-            deviceItem.state = isOn ? .on : .off
-            deviceItem.representedObject = device
+            let deviceItem = item(Sidecar.name(device), nil, symbol: isOn ? "ipad.landscape.badge.play" : "ipad.landscape",
+                                  detail: isOn ? "已连接" : "未连接，可在控制中心的「屏幕镜像」里连接")
+            deviceItem.isEnabled = false
             menu.addItem(deviceItem)
         }
         if devices.isEmpty {
@@ -288,15 +284,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             none.isEnabled = false
             menu.addItem(none)
         }
-        menu.addItem(item("没有显示器时自动连接", #selector(toggleAuto), symbol: nil, detail: "适合带 Mac mini 出门", checked: autoEnabled))
+        menu.addItem(item("没有显示器时自动连接", #selector(toggleAuto), symbol: nil,
+                          detail: "适合带 Mac mini 出门；想断开随航时先关掉它，否则 10 秒后会自动重连", checked: autoEnabled))
 
         menu.addItem(.separator())
         menu.addItem(.sectionHeader(title: uu.connected ? "UU 远程 · 已连接" : "UU 远程 · 未连接"))
-        let remote = gate.active
-            ? item("恢复物理显示器", busy ? nil : #selector(toggleRemote), symbol: "display.2", detail: "退出单屏，不锁屏")
-            : item("切换到 iPad 单屏", busy || remoteApplied ? nil : #selector(toggleRemote), symbol: "rectangle.inset.filled",
-                   detail: "只保留一块 2752×2064 的屏幕，关闭其他显示器")
-        menu.addItem(remote)
+        // 单屏只在 UU 连接中有意义：未连接时只显示说明
+        if gate.active {
+            menu.addItem(item("恢复物理显示器", busy ? nil : #selector(toggleRemote), symbol: "display.2", detail: "退出单屏，不锁屏"))
+        } else if uu.connected {
+            menu.addItem(item("切换到 iPad 单屏", busy || remoteApplied ? nil : #selector(toggleRemote), symbol: "rectangle.inset.filled",
+                              detail: "只保留一块 2752×2064 的屏幕，关闭其他显示器"))
+        } else {
+            let hint = item("iPad 单屏", nil, symbol: "rectangle.inset.filled", detail: "用 UU 远程连入后可在这里切换")
+            hint.isEnabled = false
+            menu.addItem(hint)
+        }
         if uu.connected {
             for (id, alias) in uu.controllers.sorted(by: { $0.value < $1.value }) {
                 let device = item("\(alias) 连入时自动切换", #selector(toggleAutoDevice(_:)), symbol: nil,
@@ -327,22 +330,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func toggleAuto() {
         autoEnabled.toggle()
         if !autoEnabled { leavePortable() }
-    }
-
-    /// 点已连接的设备即断开。便携场景下手动断开后不再自动重连；在 iPad 上直接断开会在 10 秒后重连
-    @objc private func toggleDevice(_ sender: NSMenuItem) {
-        guard let device = sender.representedObject as? NSObject else { return }
-        if Sidecar.connected().contains(device) {
-            if portable { reconnectPaused = true }
-            work.async {
-                _ = Sidecar.disconnect(device)
-                DispatchQueue.main.async { self.refreshIcon() }
-            }
-        } else {
-            reconnectPaused = false
-            connectSidecar(device)
-            refreshIcon()
-        }
     }
 
     @objc private func toggleRemote() {
