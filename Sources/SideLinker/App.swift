@@ -9,7 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let agent = SMAppService.agent(plistName: "com.yx1100.sidelinker.plist")
     private let uu = UUWatcher()
-    private var gate = RemoteGate(grace: 60)
+    private var gate = RemoteGate(grace: 30) // UU 日志里见过断开 22 秒后又连上，30 秒内重连不来回切换
     private var remoteScreen: VirtualScreen?
     private var lockAfterRestore = false // UU 会话结束后恢复物理屏，再锁屏
     private var stableModes: [CGDirectDisplayID: Int32] = [:] // 持续 10 秒没变的分辨率，恢复时用
