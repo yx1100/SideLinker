@@ -47,6 +47,10 @@ func selftest() -> Int32 {
     check(UUWatcher.state(fromLine: #"{"onPeerConnectionState":{"_0":{"state":0,"handle":1}}}"#) == 0, "键顺序不同也能解析")
     check(UUWatcher.state(fromLine: #"{"onRoomState":{"_0":{"handle":1,"state":1,"error_code":9000}}}"#) == nil, "忽略 onRoomState")
     check(UUWatcher.state(fromLine: #"{"heartbeat":{"timestamp":1}}"#) == nil, "忽略心跳")
+    let push = #"[t] 被控-收到推送数据-{"data":{"device_id":"mac1","participants_info":[{"alias":"iPad","device_id":"pad1","platform":3},{"alias":"MacBook","device_id":"mac2","platform":4}],"platform":4},"type":"device_info_changed"}"#
+    let parsed = UUWatcher.participants(fromLine: push)
+    check(parsed?.host == "mac1" && parsed?.controllers == ["pad1": "iPad"], "解析连入设备并排除 Mac")
+    check(UUWatcher.participants(fromLine: #"{"data":{"device_id":"mac1","participants_info":[]},"type":"device_info_changed"}"#)?.controllers.isEmpty == true, "断开后连入设备为空")
 
     let t = Date()
     var gate = RemoteGate(grace: 30)

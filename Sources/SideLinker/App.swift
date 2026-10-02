@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var gate = RemoteGate(grace: 30) // UU 日志里见过断开 22 秒后又连上，30 秒内重连不来回切换
     private var remoteScreen: VirtualScreen?
     private var lockAfterRestore = false // UU 会话结束后恢复物理屏，再锁屏
+    private var autoSuppressed = false // 本次会话中手动恢复过，不再自动切换
     private var stableModes: [CGDirectDisplayID: Int32] = [:] // 持续 10 秒没变的分辨率，恢复时用
     private var pendingModes: [CGDirectDisplayID: Int32] = [:]
     private var pendingSince = Date()
@@ -30,6 +31,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var nextAttempt = Date.distantPast
     private var connecting = false
     private var reconnectPaused = false
+
+    /// 连入时自动切换单屏的设备 ID
+    private var autoDevices: Set<String> {
+        get { Set(defaults.stringArray(forKey: "autoDevices") ?? []) }
+        set { defaults.set(Array(newValue), forKey: "autoDevices") }
+    }
 
     private var autoEnabled: Bool {
         get { !defaults.bool(forKey: "autoDisabled") }
@@ -86,6 +93,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         _ = gate.update(session: uu.connected, now: Date())
+        // 记住的设备连入时自动切换；电脑、手机等其他设备连入时不动
+        if !uu.connected { autoSuppressed = false }
+        if uu.connected, !gate.active, !remoteApplied, !autoSuppressed, !autoDevices.isDisjoint(with: uu.controllers.keys) {
+            gate.enter()
+        }
         if gate.active && uu.connected { lockAfterRestore = true }
         let locked = Session.isLocked
         if locked && !gate.active { lockAfterRestore = false } // 已被锁过（如 UU 自动锁屏），解锁后不再重复锁
@@ -285,6 +297,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             : item("切换到 iPad 单屏", busy || remoteApplied ? nil : #selector(toggleRemote), symbol: "rectangle.inset.filled",
                    detail: "只保留一块 2752×2064 的屏幕，关闭其他显示器")
         menu.addItem(remote)
+        if uu.connected {
+            for (id, alias) in uu.controllers.sorted(by: { $0.value < $1.value }) {
+                let device = item("\(alias) 连入时自动切换", #selector(toggleAutoDevice(_:)), symbol: nil,
+                                  detail: "只对这台设备生效，其他设备连入时不切换", checked: autoDevices.contains(id))
+                device.representedObject = id
+                menu.addItem(device)
+            }
+        } else if !autoDevices.isEmpty {
+            menu.addItem(item("已记住 \(autoDevices.count) 台设备，连入时自动切换", #selector(forgetAutoDevices), symbol: nil,
+                              detail: "点按全部忘记"))
+        }
 
         menu.addItem(.separator())
         menu.addItem(item("登录时启动", #selector(toggleLogin), symbol: nil, detail: "", checked: agent.status == .enabled))
@@ -326,11 +349,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if gate.active {
             gate.exit()
             lockAfterRestore = false
+            autoSuppressed = uu.connected
         } else {
             gate.enter()
         }
         tickRemote()
         refreshIcon()
+    }
+
+    @objc private func toggleAutoDevice(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        if autoDevices.contains(id) { autoDevices.remove(id) } else { autoDevices.insert(id) }
+    }
+
+    @objc private func forgetAutoDevices() {
+        autoDevices = []
     }
 
     @objc private func toggleLogin() {
