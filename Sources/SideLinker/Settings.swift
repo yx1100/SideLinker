@@ -64,7 +64,15 @@ private enum Pane: String, CaseIterable, Identifiable {
         switch self {
         case .sidecar: "ipad.landscape"
         case .remote: "display"
-        case .general: "gearshape"
+        case .general: "gearshape.fill"
+        }
+    }
+    /// 系统设置风格的彩色图标底色
+    var tint: Color {
+        switch self {
+        case .sidecar: .blue
+        case .remote: .indigo
+        case .general: .gray
         }
     }
 }
@@ -78,24 +86,25 @@ struct SettingsView: View {
     @State private var editingID: String? // 正在编辑名称的设备
     @State private var draftName = ""
     @FocusState private var nameFocused: Bool
+    @State private var showWirelessTips = false // 两组使用须知默认折叠
+    @State private var showBootTips = false
 
     var body: some View {
         // 不用 NavigationSplitView：放在 AppKit 窗口里时，侧栏和标题栏的分隔线会错位
         HStack(spacing: 0) {
             List(selection: $pane) {
+                appHeader
                 Section {
-                    ForEach([Pane.sidecar, Pane.remote]) { pane in
-                        Label(pane.rawValue, systemImage: pane.symbol).tag(pane)
-                    }
+                    ForEach([Pane.sidecar, Pane.remote]) { sidebarRow($0) }
                 }
                 Section {
-                    Label(Pane.general.rawValue, systemImage: Pane.general.symbol).tag(Pane.general)
+                    sidebarRow(.general)
                 }
             }
             .onChange(of: pane) { UserDefaults.standard.set(pane?.rawValue, forKey: "settingsPane") }
             .listStyle(.sidebar)
             .safeAreaPadding(.top, 40) // 让出红绿灯按钮
-            .frame(width: 180)
+            .frame(width: 210)
             Divider()
             VStack(alignment: .leading, spacing: 0) {
                 Text(pane?.rawValue ?? "")
@@ -137,19 +146,19 @@ struct SettingsView: View {
                 Text("开机时若未连接显示器，将自动连接最近使用的 iPad 作为唯一显示器")
             }
         }
-        Section("无线随航条件") {
+        Section("无线随航条件", isExpanded: $showWirelessTips) {
             tip("person.crop.circle", "登录同一 Apple 账户", "Mac 与 iPad 需登录同一 Apple 账户，并启用双重认证")
             tip("wifi", "打开 Wi-Fi、蓝牙和接力", "无需接入无线网络，两台设备保持在 10 米范围内即可")
             tip("personalhotspot", "关闭 iPad 个人热点", "个人热点开启时无法使用无线随航")
             tip("cable.connector", "建议携带 USB-C 线缆", "有线连接不受无线条件限制；首次连接时需在 iPad 上信任此电脑")
         }
-        Section("无显示器开机准备") {
-            LabeledContent {
+        Section("无显示器开机准备", isExpanded: $showBootTips) {
+            HStack {
+                tip("lock.shield", "关闭文件保险箱并启用自动登录", "文件保险箱开启时，Mac 开机后将停留在登录界面，无法自动连接")
+                Spacer()
                 Button("前往设置") {
                     NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?FileVault")!)
                 }
-            } label: {
-                tip("lock.shield", "关闭文件保险箱并启用自动登录", "文件保险箱开启时，Mac 开机后将停留在登录界面，无法自动连接")
             }
             tip("power", "启用登录时启动", "位于「通用」设置，确保开机后 SideLinker 自动运行")
             tip("clock.arrow.circlepath", "出行前完成一次连接", "SideLinker 将优先连接最近使用的 iPad")
@@ -210,6 +219,34 @@ struct SettingsView: View {
     }
 
     // MARK: 组件
+
+    /// 侧栏顶部：App 图标、名称和版本
+    private var appHeader: some View {
+        HStack(spacing: 10) {
+            Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 36, height: 36)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("SideLinker").font(.headline)
+                Text("版本 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-")")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 6)
+        .selectionDisabled()
+    }
+
+    /// 系统设置风格的侧栏行：彩色圆角方块里放白色图标，图标与文字垂直居中
+    private func sidebarRow(_ pane: Pane) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: pane.symbol)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 22, height: 22)
+                .background(pane.tint.gradient, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            Text(pane.rawValue)
+        }
+        .padding(.vertical, 2)
+        .tag(pane)
+    }
 
     /// 设备名称：点击后就地编辑，回车或移开焦点时保存，Esc 取消，清空则恢复 UU 中的名称
     @ViewBuilder private func nameEditor(_ device: SettingsModel.RemoteDevice) -> some View {
