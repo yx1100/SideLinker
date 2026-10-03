@@ -9,12 +9,12 @@ struct ScreenSize: Hashable, Identifiable {
     var text: String { "\(width) × \(height)" }
 
     static let all = [
-        ScreenSize(name: "iPad Pro 13 英寸（M4 及以后）", width: 2752, height: 2064),
+        ScreenSize(name: "iPad Pro 13 英寸（M4 及后续机型）", width: 2752, height: 2064),
         ScreenSize(name: "iPad Pro 12.9 英寸 / iPad Air 13 英寸", width: 2732, height: 2048),
-        ScreenSize(name: "iPad Pro 11 英寸（M4 及以后）", width: 2420, height: 1668),
-        ScreenSize(name: "iPad Pro 11 英寸（M2 及以前）", width: 2388, height: 1668),
-        ScreenSize(name: "iPad Air 11 英寸 / iPad（第 10 代及以后）", width: 2360, height: 1640),
-        ScreenSize(name: "iPad mini（第 6 代及以后）", width: 2266, height: 1488),
+        ScreenSize(name: "iPad Pro 11 英寸（M4 及后续机型）", width: 2420, height: 1668),
+        ScreenSize(name: "iPad Pro 11 英寸（M2 及更早机型）", width: 2388, height: 1668),
+        ScreenSize(name: "iPad Air 11 英寸 / iPad（第 10 代及后续机型）", width: 2360, height: 1640),
+        ScreenSize(name: "iPad mini（第 6 代及后续机型）", width: 2266, height: 1488),
     ]
     static let standard = all[0]
     static func from(id: String?) -> ScreenSize { all.first { $0.id == id } ?? standard }
@@ -43,7 +43,7 @@ final class SettingsModel: ObservableObject {
     @Published var autoConnect = true
     @Published var uuConnected = false
     @Published var remoteActive = false
-    @Published var activeSize: ScreenSize? // 只用 iPad 显示时虚拟屏的尺寸
+    @Published var activeSize: ScreenSize? // 仅使用 iPad 显示时虚拟屏的尺寸
     @Published var busy = false
     @Published var remoteDevices: [RemoteDevice] = []
     @Published var launchAtLogin = false
@@ -129,20 +129,27 @@ struct SettingsView: View {
         }
         Section {
             Toggle(isOn: binding(\.autoConnect, model.setAutoConnect)) {
-                Text("没有显示器时自动连接")
-                Text("开机时没有显示器，自动连接上次使用的 iPad，作为唯一屏幕")
+                Text("无显示器时自动连接")
+                Text("开机时若未连接显示器，将自动连接最近使用的 iPad 作为唯一显示器")
             }
         }
-        Section("使用须知") {
-            tip("personalhotspot", "不要开启 iPad 的个人热点", "无线随航要求 iPad 不共享蜂窝网络")
-            tip("cable.connector", "户外建议用 USB-C 线连接", "不需要 Wi-Fi 网络，还能给 iPad 充电")
+        Section("无线随航条件") {
+            tip("person.crop.circle", "登录同一 Apple 账户", "Mac 与 iPad 需登录同一 Apple 账户，并启用双重认证")
+            tip("wifi", "打开 Wi-Fi、蓝牙和接力", "无需接入无线网络，两台设备保持在 10 米范围内即可")
+            tip("personalhotspot", "关闭 iPad 个人热点", "个人热点开启时无法使用无线随航")
+            tip("cable.connector", "建议携带 USB-C 线缆", "有线连接不受无线条件限制；首次连接时需在 iPad 上信任此电脑")
+        }
+        Section("无显示器开机准备") {
             LabeledContent {
-                Button("打开设置") {
+                Button("前往设置") {
                     NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?FileVault")!)
                 }
             } label: {
-                tip("lock.shield", "文件保险箱会挡住无显示器开机", "开启时无法自动登录，需关闭文件保险箱并开启自动登录")
+                tip("lock.shield", "关闭文件保险箱并启用自动登录", "文件保险箱开启时，Mac 开机后将停留在登录界面，无法自动连接")
             }
+            tip("power", "启用登录时启动", "位于「通用」设置，确保开机后 SideLinker 自动运行")
+            tip("clock.arrow.circlepath", "出行前完成一次连接", "SideLinker 将优先连接最近使用的 iPad")
+            tip("ipad.landscape", "保持 iPad 解锁并靠近 Mac", "iPad 端无需其他操作，连接后即作为 Mac 的显示器")
         }
     }
 
@@ -150,23 +157,23 @@ struct SettingsView: View {
 
     @ViewBuilder private var remote: some View {
         Section("状态") {
-            LabeledContent("UU 远程") {
+            LabeledContent("UU 远程连接") {
                 status(model.uuConnected, on: "已连接", off: "未连接")
             }
             Toggle(isOn: Binding(get: { model.remoteActive }, set: { _ in model.toggleRemote() })) {
-                Text("只用 iPad 显示")
-                Text(model.activeSize.map { "已开启，屏幕 \($0.text)" } ?? "关闭其他显示器，只保留一块与 iPad 同尺寸的屏幕")
+                Text("仅使用 iPad 显示")
+                Text(model.activeSize.map { "已开启，分辨率 \($0.text)" } ?? "停用其他显示器，仅保留一块与 iPad 尺寸相同的虚拟显示器")
             }
             .disabled(model.busy || !(model.uuConnected || model.remoteActive))
         }
         if model.remoteDevices.isEmpty {
             Section("设备") {
-                Text("还没有通过 UU 连入过的设备").foregroundStyle(.secondary)
+                Text("暂无通过 UU 远程接入的设备").foregroundStyle(.secondary)
             }
         }
         ForEach(model.remoteDevices) { device in
             Section {
-                Toggle("连入时自动开启「只用 iPad 显示」", isOn: Binding(get: { device.auto }, set: { model.setAutoDevice(device.id, $0) }))
+                Toggle("接入时自动启用「仅使用 iPad 显示」", isOn: Binding(get: { device.auto }, set: { model.setAutoDevice(device.id, $0) }))
                 Picker("屏幕尺寸", selection: Binding(get: { device.size }, set: { model.setScreenSize(device.id, $0) })) {
                     ForEach(ScreenSize.all) { size in
                         Text("\(size.name)　\(size.text)").tag(size)
@@ -181,7 +188,7 @@ struct SettingsView: View {
                     Label(device.name, systemImage: "ipad.landscape")
                     Text(device.detail).font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    if device.connected { status(true, on: "已连入", off: "") }
+                    if device.connected { status(true, on: "已接入", off: "") }
                 }
             }
         }
@@ -215,7 +222,7 @@ struct SettingsView: View {
                 Text(detail).font(.caption).foregroundStyle(.secondary)
             }
         } icon: {
-            Image(systemName: symbol).foregroundStyle(.secondary)
+            Image(systemName: symbol).foregroundStyle(.secondary).frame(width: 20) // 图标宽度不一，固定列宽让文字对齐
         }
     }
 

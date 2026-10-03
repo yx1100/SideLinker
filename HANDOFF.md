@@ -113,10 +113,11 @@ open build/SideLinker.app                     # 运行；再次 open 会弹出�
 - 回复用中文；回复第一句先说「信哥」（用户的全局要求）
 - **署名**：提交信息、文件、文档里不能出现任何 AI 署名或「由 AI 生成」字样。commit trailer 只写 `Authored-By: Xin <yuxin1100@foxmail.com>`，不写 Co-Authored-By
 - 每完成一项改动：`git add` 本次相关文件（不用 `-A`）→ commit → push。force-push、改写历史、开 PR、合并需要单独确认
+- 界面文字使用书面、正式的表达，避免口语（例如用「停用」而非「关掉」，「接入」而非「连入」）
 - 界面文字要精简：用户明确要求删掉所有说明性的副标题和操作提示，只保留状态信息
 - 菜单栏只呈现信息，可点的只有「设置…」和「退出 SideLinker」；所有功能放进设置窗口，后续新功能也加在设置窗口侧栏
 - 菜单栏图标用 17pt、中等粗细的 SF Symbol 绘制，和其他菜单栏图标大小一致
-- 功能名称：「只用 iPad 显示」（旧称「iPad 单屏」）；菜单栏状态写成「名称 · 状态」
+- 功能名称：「仅使用 iPad 显示」（旧称「iPad 单屏」）；菜单栏状态写成「名称 · 状态」
 - UU 日志不含连入设备的屏幕分辨率和型号，屏幕尺寸由用户在设置里按设备选择（`deviceScreenSizes`），预设列表在 `Settings.swift` 的 `ScreenSize.all`
 - 用户偏好原生实现，可以用私有接口，不依赖 BetterDisplay
 - 写文档类内容后，用户要求按 `lieflat-less-ai-tone` 规则去掉 AI 腔

@@ -139,7 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let screen = VirtualScreen(name: "SideLinker iPad", width: UInt32(size.width), height: UInt32(size.height),
                                          ppi: 264, productID: 1) else {
             gate.exit()
-            notify("虚拟屏创建失败")
+            notify("虚拟显示器创建失败")
             return
         }
         remoteScreen = screen
@@ -151,7 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.async {
                 self.busy = false
                 self.refreshIcon()
-                if !allOff { self.notify("部分显示器无法关闭，已改为镜像") }
+                if !allOff { self.notify("部分显示器无法停用，已改为镜像显示") }
             }
         }
     }
@@ -288,19 +288,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshIcon()
         publish()
 
-        menu.addItem(info(model.stateTitle, detail: Session.isLocked && remoteApplied && !gate.active ? "解锁后继续" : ""))
+        menu.addItem(info(model.stateTitle, detail: Session.isLocked && remoteApplied && !gate.active ? "将在解锁后继续" : ""))
         menu.addItem(.separator())
         menu.addItem(.sectionHeader(title: "随航"))
-        if model.sidecarDevices.isEmpty { menu.addItem(info("附近没有 iPad")) }
+        if model.sidecarDevices.isEmpty { menu.addItem(info("附近未发现 iPad")) }
         for device in model.sidecarDevices {
             menu.addItem(info("\(device.name) · \(device.connected ? "已连接" : "未连接")",
                               symbol: device.connected ? "ipad.landscape.badge.play" : "ipad.landscape"))
         }
         menu.addItem(.separator())
         menu.addItem(.sectionHeader(title: uu.connected ? "远程连接 · 已连接" : "远程连接 · 未连接"))
-        menu.addItem(info("只用 iPad 显示 · \(model.remoteActive ? "已开启" : "未开启")",
-                          detail: activeSize.map { "屏幕 \($0.text)" } ?? "", symbol: "ipad.landscape"))
-        for name in uu.controllers.values.sorted() { menu.addItem(info("\(name) · 已连入", symbol: "ipad.landscape")) }
+        menu.addItem(info("仅使用 iPad 显示 · \(model.remoteActive ? "已开启" : "未开启")",
+                          detail: activeSize.map { "分辨率 \($0.text)" } ?? "", symbol: "ipad.landscape"))
+        for name in uu.controllers.values.sorted() { menu.addItem(info("\(name) · 已接入", symbol: "ipad.landscape")) }
 
         menu.addItem(.separator())
         let settings = NSMenuItem(title: "设置…", action: #selector(showSettings), keyEquivalent: ",")
@@ -328,7 +328,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             window.isReleasedWhenClosed = false
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
-            window.setContentSize(NSSize(width: 680, height: 460))
+            window.setContentSize(NSSize(width: 700, height: 620))
             window.center()
             settingsWindow = window
         }
@@ -341,11 +341,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// 把当前状态写进设置窗口的模型
     private func publish() {
         switch currentState() {
-        case .remote: model.stateTitle = "只用 iPad 显示中"
+        case .remote: model.stateTitle = "仅使用 iPad 显示"
         case .restoring: model.stateTitle = "正在恢复物理显示器"
         case .sidecar: model.stateTitle = "随航已连接"
         case .connecting: model.stateTitle = "正在连接随航…"
-        case .waiting: model.stateTitle = "等待 iPad"
+        case .waiting: model.stateTitle = "正在等待 iPad"
         case .idle: model.stateTitle = "就绪"
         }
         // SidecarCore 每次调用 devices/connectedDevices 可能返回新对象实例，不能用引用比较，用 identifier 匹配
