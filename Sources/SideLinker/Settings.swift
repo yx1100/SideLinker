@@ -38,7 +38,6 @@ final class SettingsModel: ObservableObject {
         let size: ScreenSize
     }
 
-    @Published var stateTitle = "就绪"
     @Published var sidecarDevices: [Device] = []
     @Published var autoConnect = true
     @Published var uuConnected = false

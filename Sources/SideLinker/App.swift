@@ -287,27 +287,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.button?.image = image
     }
 
-    /// 菜单栏只呈现信息，可点的只有「设置…」和「退出」
+    /// 第一组列出当前已建立的连接；随航和远程连接两组未连接时只显示标题，已连接时展开详情。
+    /// 可点的是「使用 iPad 单屏显示」「设置…」和「退出」
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         refreshIcon()
         publish()
 
-        menu.addItem(info(model.stateTitle, detail: Session.isLocked && remoteApplied && !gate.active ? "将在解锁后继续" : ""))
-        menu.addItem(.separator())
-        menu.addItem(.sectionHeader(title: "随航"))
-        if model.sidecarDevices.isEmpty { menu.addItem(info("附近未发现 iPad")) }
-        for device in model.sidecarDevices {
-            menu.addItem(info("\(device.name) · \(device.connected ? "已连接" : "未连接")",
-                              symbol: device.connected ? "ipad.landscape.badge.play" : "ipad.landscape"))
+        let sidecar = model.sidecarDevices.filter(\.connected)
+        var status: [NSMenuItem] = []
+        if !sidecar.isEmpty { status.append(info("随航已连接", symbol: "ipad.landscape.badge.play")) }
+        if remoteApplied {
+            status.append(info(gate.active ? "正在使用 iPad 单屏显示" : "正在恢复物理显示器",
+                               detail: Session.isLocked && !gate.active ? "将在解锁后继续" : "",
+                               symbol: "rectangle.inset.filled"))
+        } else if uu.connected {
+            status.append(info("远程连接已建立", symbol: "display"))
         }
+        if status.isEmpty {
+            status.append(info(connecting ? "正在连接随航…" : portable ? "正在等待 iPad" : "未建立连接"))
+        }
+        status.forEach(menu.addItem)
+
+        menu.addItem(.separator())
+        menu.addItem(.sectionHeader(title: sidecar.isEmpty ? "随航 · 未连接" : "随航 · 已连接"))
+        for device in sidecar { menu.addItem(info(device.name, symbol: "ipad.landscape.badge.play")) }
+
         menu.addItem(.separator())
         menu.addItem(.sectionHeader(title: uu.connected ? "远程连接 · 已连接" : "远程连接 · 未连接"))
-        menu.addItem(info("使用 iPad 单屏显示 · \(model.remoteActive ? "已开启" : "未开启")",
-                          detail: activeSize.map { "分辨率 \($0.text)" } ?? "", symbol: "ipad.landscape"))
-        let custom = nicknames
-        for (id, name) in uu.controllers.sorted(by: { $0.value < $1.value }) {
-            menu.addItem(info("\(custom[id] ?? name) · 已接入", symbol: "ipad.landscape"))
+        if uu.connected {
+            let custom = nicknames
+            for (id, name) in uu.controllers.sorted(by: { $0.value < $1.value }) {
+                menu.addItem(info(custom[id] ?? name, detail: platformName(id, name) ?? "", symbol: "ipad.landscape"))
+            }
+        }
+        // 与设置窗口中的开关条件一致：UU 已连接，或单屏仍在开启中时可以操作
+        if uu.connected || gate.active {
+            let toggle = NSMenuItem(title: "使用 iPad 单屏显示", action: #selector(toggleRemote), keyEquivalent: "")
+            toggle.target = self
+            toggle.state = gate.active ? .on : .off
+            toggle.isEnabled = !model.busy
+            if #available(macOS 14.4, *), let size = activeSize { toggle.subtitle = "分辨率 \(size.text)" }
+            menu.addItem(toggle)
         }
 
         menu.addItem(.separator())
@@ -316,6 +337,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(settings)
         menu.addItem(NSMenuItem(title: "退出 SideLinker", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
+
+    @objc private func toggleRemote() { model.toggleRemote() }
 
     /// 不可点的信息行
     private func info(_ title: String, detail: String = "", symbol: String? = nil) -> NSMenuItem {
@@ -348,14 +371,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// 把当前状态写进设置窗口的模型
     private func publish() {
-        switch currentState() {
-        case .remote: model.stateTitle = "使用 iPad 单屏显示"
-        case .restoring: model.stateTitle = "正在恢复物理显示器"
-        case .sidecar: model.stateTitle = "随航已连接"
-        case .connecting: model.stateTitle = "正在连接随航…"
-        case .waiting: model.stateTitle = "正在等待 iPad"
-        case .idle: model.stateTitle = "就绪"
-        }
         // SidecarCore 每次调用 devices/connectedDevices 可能返回新对象实例，不能用引用比较，用 identifier 匹配
         let connectedIDs = Set(Sidecar.connected().map { Sidecar.identifier($0) })
         model.sidecarDevices = Sidecar.devices().map {
