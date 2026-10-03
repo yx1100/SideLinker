@@ -361,8 +361,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // 名称跟随 UU：设备每次连入，UU 都会在日志里写下它当前的名称，这里取最新的一条
         for (id, name) in autoDevices { if let seen = uu.known[id], seen.name != name { autoDevices[id] = seen.name } }
         let controllers = uu.connected ? uu.controllers : [:]
-        let names = autoDevices.merging(controllers) { _, new in new }
         let sizes = deviceSizes
+        // 列出当前连入的、记住的、选过屏幕尺寸的设备；「忘记此设备」会把后两项都清掉
+        var names = autoDevices.merging(controllers) { _, new in new }
+        for id in sizes.keys where names[id] == nil { names[id] = uu.known[id]?.name ?? id }
         model.remoteDevices = names.sorted { $0.value < $1.value }.map { id, name in
             .init(id: id, name: name, detail: ([platformName(id, name)].compactMap { $0 } + [id]).joined(separator: " · "),
                   connected: controllers[id] != nil, auto: autoDevices[id] != nil, size: ScreenSize.from(id: sizes[id]))
@@ -403,6 +405,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.setAutoDevice = { [weak self] id, on in
             guard let self else { return }
             autoDevices[id] = on ? (uu.controllers[id] ?? autoDevices[id] ?? id) : nil
+            // 关掉自动开启不等于忘记：记下屏幕尺寸，设备继续留在列表里
+            if !on && deviceSizes[id] == nil { deviceSizes[id] = ScreenSize.standard.id }
+            publish()
+        }
+        model.forgetDevice = { [weak self] id in
+            guard let self else { return }
+            autoDevices[id] = nil
+            deviceSizes[id] = nil
             publish()
         }
         model.setScreenSize = { [weak self] id, size in

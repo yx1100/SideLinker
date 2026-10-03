@@ -52,6 +52,7 @@ final class SettingsModel: ObservableObject {
     var toggleRemote: () -> Void = {}
     var setAutoDevice: (String, Bool) -> Void = { _, _ in }
     var setScreenSize: (String, ScreenSize) -> Void = { _, _ in }
+    var forgetDevice: (String) -> Void = { _ in }
     var setLaunchAtLogin: (Bool) -> Void = { _ in }
 }
 
@@ -170,6 +171,10 @@ struct SettingsView: View {
                     ForEach(ScreenSize.all) { size in
                         Text("\(size.name)　\(size.text)").tag(size)
                     }
+                }
+                HStack {
+                    Spacer()
+                    Button("忘记此设备") { model.forgetDevice(device.id) }
                 }
             } header: {
                 HStack(alignment: .firstTextBaseline) {
