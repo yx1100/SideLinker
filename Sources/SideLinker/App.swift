@@ -328,7 +328,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             settingsWindow = window
         }
         publish()
-        NSApp.activate()
+        // LSUIElement 应用从菜单栏打开窗口时，需要显式置前，否则会被其他 App 的窗口挡住
+        NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
     }
 

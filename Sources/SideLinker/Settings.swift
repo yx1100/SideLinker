@@ -26,7 +26,7 @@ final class SettingsModel: ObservableObject {
 }
 
 private enum Pane: String, CaseIterable, Identifiable {
-    case sidecar = "随航", remote = "UU 远程", general = "通用"
+    case sidecar = "随航", remote = "远程连接", general = "通用"
     var id: Self { self }
     var symbol: String {
         switch self {
@@ -47,8 +47,15 @@ struct SettingsView: View {
     var body: some View {
         // 不用 NavigationSplitView：放在 AppKit 窗口里时，侧栏和标题栏的分隔线会错位
         HStack(spacing: 0) {
-            List(Pane.allCases, selection: $pane) { pane in
-                Label(pane.rawValue, systemImage: pane.symbol)
+            List(selection: $pane) {
+                Section {
+                    ForEach([Pane.sidecar, Pane.remote]) { pane in
+                        Label(pane.rawValue, systemImage: pane.symbol).tag(pane)
+                    }
+                }
+                Section {
+                    Label(Pane.general.rawValue, systemImage: Pane.general.symbol).tag(Pane.general)
+                }
             }
             .onChange(of: pane) { UserDefaults.standard.set(pane?.rawValue, forKey: "settingsPane") }
             .listStyle(.sidebar)
