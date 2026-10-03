@@ -31,7 +31,7 @@ private enum Pane: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .sidecar: "ipad.landscape"
-        case .remote: "rectangle.inset.filled"
+        case .remote: "display"
         case .general: "gearshape"
         }
     }
