@@ -84,6 +84,7 @@ struct SettingsView: View {
     }() ?? .sidecar
     @State private var editingID: String? // 正在编辑名称的设备
     @State private var draftName = ""
+    @State private var forgetting: String? // 等待确认忘记的设备
     @FocusState private var nameFocused: Bool
     @State private var showWirelessTips = false // 两组使用须知默认折叠
     @State private var showBootTips = false
@@ -197,7 +198,14 @@ struct SettingsView: View {
                 }
                 HStack {
                     Spacer()
-                    Button("忘记此设备") { model.forgetDevice(device.id) }
+                    Button("忘记此设备") { forgetting = device.id }
+                        .alert("要忘记「\(device.name)」吗？", isPresented: Binding(
+                            get: { forgetting == device.id }, set: { if !$0 { forgetting = nil } })) {
+                            Button("忘记", role: .destructive) { model.forgetDevice(device.id) }
+                            Button("取消", role: .cancel) {}
+                        } message: {
+                            Text("将清除此设备的自动启用设置、屏幕尺寸和自定义名称。")
+                        }
                 }
             } header: {
                 HStack(alignment: .firstTextBaseline) {
