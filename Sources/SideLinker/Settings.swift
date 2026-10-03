@@ -99,6 +99,13 @@ struct SettingsView: View {
         }
         Section {
             Toggle("没有显示器时自动连接", isOn: binding(\.autoConnect, model.setAutoConnect))
+        } footer: {
+            Text("开机时没有连接任何显示器，SideLinker 会自动连接上次使用的 iPad 作为唯一屏幕。适合带 Mac mini 出门、用 iPad 当显示器的场景。\n\n连接前请确认 iPad 没有开启个人热点。户外建议用 USB-C 线连接，更稳定。")
+        }
+        Section {
+            Label("如果 Mac 开启了文件保险箱（FileVault），无显示器开机时将无法进入系统，此功能不可用。需要在「系统设置 → 隐私与安全性」中关闭文件保险箱，或改用「自动登录」。", systemImage: "exclamationmark.triangle")
+                .font(.callout)
+                .foregroundStyle(.secondary)
         }
     }
 
