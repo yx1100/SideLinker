@@ -8,6 +8,8 @@ final class UUWatcher {
     private var participants: [String: [String: String]] = [:] // 被控设备 ID → [连入设备 ID: 名称]
     /// 当前连入的设备（不含 Mac），设备 ID → 名称
     var controllers: [String: String] { participants.values.reduce(into: [:]) { $0.merge($1) { a, _ in a } } }
+    /// 日志里见过的所有连入设备：设备 ID → 名称、平台（1 Windows，3 iOS/iPadOS，4 macOS，按日志推断）
+    private(set) var known: [String: (name: String, platform: Int)] = [:]
     var onPoll: (() -> Void)?
     private let dir: URL
     private var file: URL?
@@ -25,19 +27,29 @@ final class UUWatcher {
     }
 
     /// 解析 device_info_changed 推送，返回被控设备 ID 和连入设备（排除平台 4，即 macOS）
-    static func participants<S: StringProtocol>(fromLine line: S) -> (host: String, controllers: [String: String])? {
+    static func participants<S: StringProtocol>(fromLine line: S) -> (host: String, controllers: [String: String], platforms: [String: Int])? {
         guard line.contains("device_info_changed"), let start = line.range(of: "{\"data\"") else { return nil }
         guard let json = try? JSONSerialization.jsonObject(with: Data(String(line[start.lowerBound...]).utf8)) as? [String: Any],
               let data = json["data"] as? [String: Any], let host = data["device_id"] as? String,
               let list = data["participants_info"] as? [[String: Any]] else { return nil }
         var controllers: [String: String] = [:]
+        var platforms: [String: Int] = [:]
         for item in list where (item["platform"] as? Int) != 4 {
-            if let id = item["device_id"] as? String { controllers[id] = item["alias"] as? String ?? id }
+            guard let id = item["device_id"] as? String else { continue }
+            controllers[id] = item["alias"] as? String ?? id
+            platforms[id] = item["platform"] as? Int ?? 0
         }
-        return (host, controllers)
+        return (host, controllers, platforms)
     }
 
     func start(interval: TimeInterval = 2) {
+        // 从全部日志里收集见过的设备名称和平台，用于显示已记住的设备
+        for url in logFiles() {
+            guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            for line in text.split(separator: "\n") where line.contains("participants_info\":[{") {
+                if let push = Self.participants(fromLine: line) { remember(push) }
+            }
+        }
         // 启动时从新到旧找最后一条状态
         let files = logFiles()
         file = files.last
@@ -59,6 +71,10 @@ final class UUWatcher {
         onPoll?()
     }
 
+    private func remember(_ push: (host: String, controllers: [String: String], platforms: [String: Int])) {
+        for (id, name) in push.controllers { known[id] = (name, push.platforms[id] ?? 0) }
+    }
+
     /// 文件名带日期时间，按名字排序就是按时间排序
     private func logFiles() -> [URL] {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
@@ -75,7 +91,10 @@ final class UUWatcher {
         let text = String(decoding: data[..<lastNewline], as: UTF8.self)
         let lines = text.split(separator: "\n")
         for line in lines where trackParticipants && line.contains("device_info_changed") {
-            if let push = Self.participants(fromLine: line) { participants[push.host] = push.controllers }
+            if let push = Self.participants(fromLine: line) {
+                participants[push.host] = push.controllers
+                remember(push)
+            }
         }
         let state = lines.reversed().lazy.compactMap { Self.state(fromLine: $0) }.first
         return (state, offset + UInt64(lastNewline - data.startIndex + 1))

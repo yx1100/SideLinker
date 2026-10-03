@@ -17,6 +17,7 @@ final class SettingsModel: ObservableObject {
     @Published var controllers: [String: String] = [:] // 当前连入的设备 ID → 名称
     @Published var autoDevices: [String: String] = [:] // 记住的设备 ID → 名称
     @Published var launchAtLogin = false
+    @Published var platforms: [String: String] = [:] // 设备 ID → 系统，例如 iOS / iPadOS
 
     var setAutoConnect: (Bool) -> Void = { _ in }
     var toggleRemote: () -> Void = {}
@@ -41,22 +42,31 @@ struct SettingsView: View {
     @State private var pane: Pane? = .sidecar
 
     var body: some View {
-        NavigationSplitView {
+        // 不用 NavigationSplitView：放在 AppKit 窗口里时，侧栏和标题栏的分隔线会错位
+        HStack(spacing: 0) {
             List(Pane.allCases, selection: $pane) { pane in
                 Label(pane.rawValue, systemImage: pane.symbol)
             }
-            .navigationSplitViewColumnWidth(170)
-        } detail: {
-            Form {
-                switch pane ?? .sidecar {
-                case .sidecar: sidecar
-                case .remote: remote
-                case .general: general
+            .listStyle(.sidebar)
+            .safeAreaPadding(.top, 40) // 让出红绿灯按钮
+            .frame(width: 180)
+            Divider()
+            VStack(alignment: .leading, spacing: 0) {
+                Text(pane?.rawValue ?? "")
+                    .font(.title2.bold())
+                    .padding(.horizontal, 30)
+                    .padding(.top, 40)
+                Form {
+                    switch pane ?? .sidecar {
+                    case .sidecar: sidecar
+                    case .remote: remote
+                    case .general: general
+                    }
                 }
+                .formStyle(.grouped)
             }
-            .formStyle(.grouped)
-            .navigationTitle(pane?.rawValue ?? "")
         }
+        .ignoresSafeArea()
         .frame(minWidth: 620, minHeight: 420)
     }
 
@@ -91,8 +101,9 @@ struct SettingsView: View {
                 Text("当前没有连入的设备").foregroundStyle(.secondary)
             }
             ForEach(model.controllers.sorted { $0.value < $1.value }, id: \.key) { id, name in
-                Toggle(name, isOn: Binding(get: { model.autoDevices[id] != nil },
-                                           set: { model.setAutoDevice(id, $0) }))
+                Toggle(isOn: Binding(get: { model.autoDevices[id] != nil }, set: { model.setAutoDevice(id, $0) })) {
+                    deviceLabel(id, name)
+                }
             }
         }
         Section("已记住的设备") {
@@ -100,8 +111,10 @@ struct SettingsView: View {
                 Text("无").foregroundStyle(.secondary)
             }
             ForEach(model.autoDevices.sorted { $0.value < $1.value }, id: \.key) { id, name in
-                LabeledContent(name) {
+                LabeledContent {
                     Button("忘记") { model.setAutoDevice(id, false) }
+                } label: {
+                    deviceLabel(id, name)
                 }
             }
         }
@@ -113,6 +126,13 @@ struct SettingsView: View {
         }
         Section {
             LabeledContent("版本", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-")
+        }
+    }
+
+    private func deviceLabel(_ id: String, _ name: String) -> some View {
+        VStack(alignment: .leading) {
+            Text(name)
+            if let platform = model.platforms[id] { Text(platform).font(.caption).foregroundStyle(.secondary) }
         }
     }
 

@@ -78,6 +78,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// 在启动台或「应用程序」里再次打开 SideLinker 时显示设置窗口
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showSettings()
+        return false
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         var screen = remoteScreen
         remoteScreen = nil
@@ -317,6 +323,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             window.title = "SideLinker 设置"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
             window.isReleasedWhenClosed = false
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
             window.setContentSize(NSSize(width: 680, height: 460))
             window.center()
             settingsWindow = window
@@ -345,7 +353,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.remoteActive = gate.active
         model.busy = busy || (remoteApplied && !gate.active)
         model.controllers = uu.connected ? uu.controllers : [:]
+        // 旧版只存了设备 ID，用日志里见过的名称补上
+        for (id, name) in autoDevices where name == id { if let seen = uu.known[id] { autoDevices[id] = seen.name } }
         model.autoDevices = autoDevices
+        let labels = [1: "Windows", 3: "iOS / iPadOS", 4: "macOS"]
+        model.platforms = uu.known.compactMapValues { labels[$0.platform] }
         model.launchAtLogin = agent.status == .enabled
     }
 
