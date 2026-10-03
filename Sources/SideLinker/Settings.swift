@@ -82,13 +82,18 @@ struct SettingsView: View {
     }
 
     @ViewBuilder private var sidecar: some View {
+        // 设备列表是只读状态，用普通文本行；「自动连接」是设置项，用 Toggle 行，两者区分开
         Section("附近的 iPad") {
             if model.sidecarDevices.isEmpty {
                 Text("未发现").foregroundStyle(.secondary)
             }
             ForEach(model.sidecarDevices) { device in
-                LabeledContent(device.name) {
-                    Text(device.connected ? "已连接" : "未连接").foregroundStyle(device.connected ? .green : .secondary)
+                HStack {
+                    Label(device.name, systemImage: "ipad.landscape")
+                    Spacer()
+                    Text(device.connected ? "已连接" : "未连接")
+                        .font(.callout)
+                        .foregroundStyle(device.connected ? .green : .secondary)
                 }
             }
         }
