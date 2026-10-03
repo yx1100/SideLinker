@@ -53,6 +53,7 @@ final class SettingsModel: ObservableObject {
     var setAutoDevice: (String, Bool) -> Void = { _, _ in }
     var setScreenSize: (String, ScreenSize) -> Void = { _, _ in }
     var forgetDevice: (String) -> Void = { _ in }
+    var setNickname: (String, String) -> Void = { _, _ in }
     var setLaunchAtLogin: (Bool) -> Void = { _ in }
 }
 
@@ -74,6 +75,9 @@ struct SettingsView: View {
     @State private var pane: Pane? = {
         UserDefaults.standard.string(forKey: "settingsPane").flatMap(Pane.init(rawValue:))
     }() ?? .sidecar
+    @State private var editingID: String? // 正在编辑名称的设备
+    @State private var draftName = ""
+    @FocusState private var nameFocused: Bool
 
     var body: some View {
         // 不用 NavigationSplitView：放在 AppKit 窗口里时，侧栏和标题栏的分隔线会错位
@@ -185,7 +189,7 @@ struct SettingsView: View {
                 }
             } header: {
                 HStack(alignment: .firstTextBaseline) {
-                    Label(device.name, systemImage: "ipad.landscape")
+                    nameEditor(device)
                     Text(device.detail).font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     if device.connected { status(true, on: "已接入", off: "") }
@@ -206,6 +210,39 @@ struct SettingsView: View {
     }
 
     // MARK: 组件
+
+    /// 设备名称：点击后就地编辑，回车或移开焦点时保存，Esc 取消，清空则恢复 UU 中的名称
+    @ViewBuilder private func nameEditor(_ device: SettingsModel.RemoteDevice) -> some View {
+        if editingID == device.id {
+            Label {
+                TextField("设备名称", text: $draftName)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 180)
+                    .focused($nameFocused)
+                    .onSubmit { commitName() }
+                    .onExitCommand { editingID = nil }
+                    .onChange(of: nameFocused) { if !nameFocused { commitName() } }
+            } icon: {
+                Image(systemName: "ipad.landscape")
+            }
+        } else {
+            Button {
+                draftName = device.name
+                editingID = device.id
+                nameFocused = true
+            } label: {
+                Label(device.name, systemImage: "ipad.landscape")
+            }
+            .buttonStyle(.plain)
+            .help("点击修改设备名称")
+        }
+    }
+
+    private func commitName() {
+        guard let id = editingID else { return }
+        editingID = nil
+        model.setNickname(id, draftName)
+    }
 
     /// 系统设置风格的状态：圆点加文字
     private func status(_ on: Bool, on onText: String, off offText: String) -> some View {

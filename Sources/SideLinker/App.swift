@@ -49,6 +49,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         get { defaults.dictionary(forKey: "deviceScreenSizes") as? [String: String] ?? [:] }
         set { defaults.set(newValue, forKey: "deviceScreenSizes") }
     }
+    /// 用户自定义的设备名称：设备 ID → 名称，优先于 UU 里的名称
+    private var nicknames: [String: String] {
+        get { defaults.dictionary(forKey: "deviceNicknames") as? [String: String] ?? [:] }
+        set { defaults.set(newValue, forKey: "deviceNicknames") }
+    }
     private var activeSize: ScreenSize? // 只用 iPad 显示时虚拟屏的尺寸
 
     private var autoEnabled: Bool {
@@ -300,7 +305,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.sectionHeader(title: uu.connected ? "远程连接 · 已连接" : "远程连接 · 未连接"))
         menu.addItem(info("仅使用 iPad 显示 · \(model.remoteActive ? "已开启" : "未开启")",
                           detail: activeSize.map { "分辨率 \($0.text)" } ?? "", symbol: "ipad.landscape"))
-        for name in uu.controllers.values.sorted() { menu.addItem(info("\(name) · 已接入", symbol: "ipad.landscape")) }
+        let custom = nicknames
+        for (id, name) in uu.controllers.sorted(by: { $0.value < $1.value }) {
+            menu.addItem(info("\(custom[id] ?? name) · 已接入", symbol: "ipad.landscape"))
+        }
 
         menu.addItem(.separator())
         let settings = NSMenuItem(title: "设置…", action: #selector(showSettings), keyEquivalent: ",")
@@ -365,8 +373,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // 列出当前连入的、记住的、选过屏幕尺寸的设备；「忘记此设备」会把后两项都清掉
         var names = autoDevices.merging(controllers) { _, new in new }
         for id in sizes.keys where names[id] == nil { names[id] = uu.known[id]?.name ?? id }
-        model.remoteDevices = names.sorted { $0.value < $1.value }.map { id, name in
-            .init(id: id, name: name, detail: ([platformName(id, name)].compactMap { $0 } + [id]).joined(separator: " · "),
+        let custom = nicknames
+        model.remoteDevices = names.sorted { (custom[$0.key] ?? $0.value) < (custom[$1.key] ?? $1.value) }.map { id, name in
+            // 自定义了名称时，说明里保留 UU 中的原名称
+            let parts = [platformName(id, name), custom[id] != nil ? "UU 名称：\(name)" : nil, id]
+            return .init(id: id, name: custom[id] ?? name, detail: parts.compactMap { $0 }.joined(separator: " · "),
                   connected: controllers[id] != nil, auto: autoDevices[id] != nil, size: ScreenSize.from(id: sizes[id]))
         }
         model.launchAtLogin = agent.status == .enabled
@@ -413,6 +424,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             autoDevices[id] = nil
             deviceSizes[id] = nil
+            nicknames[id] = nil
+            publish()
+        }
+        model.setNickname = { [weak self] id, name in
+            guard let self else { return }
+            let trimmed = name.trimmingCharacters(in: .whitespaces)
+            nicknames[id] = trimmed.isEmpty ? nil : trimmed // 清空即恢复使用 UU 中的名称
             publish()
         }
         model.setScreenSize = { [weak self] id, size in
