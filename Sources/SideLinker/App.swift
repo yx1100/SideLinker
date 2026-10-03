@@ -323,11 +323,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         // 与设置窗口中的开关条件一致：UU 已连接，或单屏仍在开启中时可以操作
         if uu.connected || gate.active {
-            let toggle = NSMenuItem(title: "使用 iPad 单屏显示", action: #selector(toggleRemote), keyEquivalent: "")
-            toggle.target = self
-            toggle.state = gate.active ? .on : .off
-            toggle.isEnabled = !model.busy
-            if #available(macOS 14.4, *), let size = activeSize { toggle.subtitle = "分辨率 \(size.text)" }
+            let toggle = NSMenuItem()
+            toggle.view = SwitchRow(title: "使用 iPad 单屏显示", detail: activeSize.map { "分辨率 \($0.text)" },
+                                    symbol: "rectangle.inset.filled", on: gate.active, enabled: !model.busy,
+                                    target: self, action: #selector(toggleRemote))
             menu.addItem(toggle)
         }
 
@@ -338,7 +337,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(NSMenuItem(title: "退出 SideLinker", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
 
-    @objc private func toggleRemote() { model.toggleRemote() }
+    /// 和控制中心一样，拨动开关后菜单保持打开，原地刷新内容
+    @objc private func toggleRemote() {
+        model.toggleRemote()
+        DispatchQueue.main.async { if let menu = self.statusItem.menu { self.menuNeedsUpdate(menu) } }
+    }
 
     /// 不可点的信息行
     private func info(_ title: String, detail: String = "", symbol: String? = nil) -> NSMenuItem {
@@ -472,4 +475,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         content.body = text
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }
+}
+
+/// 菜单里的开关行：图标、标题（可带副标题）和右侧的滑动开关，样式参照控制中心
+private final class SwitchRow: NSView {
+    init(title: String, detail: String?, symbol: String, on: Bool, enabled: Bool, target: AnyObject, action: Selector) {
+        super.init(frame: NSRect(x: 0, y: 0, width: 260, height: detail == nil ? 28 : 40))
+        autoresizingMask = .width // 跟随菜单宽度
+
+        let icon = NSImageView(image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil) ?? NSImage())
+        icon.contentTintColor = enabled ? .labelColor : .disabledControlTextColor
+        let name = NSTextField(labelWithString: title)
+        name.font = .menuFont(ofSize: 0)
+        name.textColor = enabled ? .labelColor : .disabledControlTextColor
+        let texts = NSStackView(views: [name])
+        texts.orientation = .vertical
+        texts.alignment = .leading
+        texts.spacing = 1
+        if let detail {
+            let sub = NSTextField(labelWithString: detail)
+            sub.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+            sub.textColor = .secondaryLabelColor
+            texts.addArrangedSubview(sub)
+        }
+        let toggle = NSSwitch()
+        toggle.controlSize = .mini
+        toggle.state = on ? .on : .off
+        toggle.isEnabled = enabled
+        toggle.target = target
+        toggle.action = action
+
+        let row = NSStackView(views: [icon, texts, NSView(), toggle])
+        row.spacing = 6
+        row.edgeInsets = NSEdgeInsets(top: 0, left: 14, bottom: 0, right: 14)
+        row.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(row)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: leadingAnchor), row.trailingAnchor.constraint(equalTo: trailingAnchor),
+            row.topAnchor.constraint(equalTo: topAnchor), row.bottomAnchor.constraint(equalTo: bottomAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 16),
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
 }
