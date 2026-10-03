@@ -247,9 +247,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .connecting, .waiting: name = "ipad.and.arrow.forward"
         case .idle: name = "ipad.landscape"
         }
-        // SF Symbol 的外框带留白，按 18pt 字号、中等粗细绘制，和菜单栏其他图标观感一致
+        // SF Symbol 的外框带留白，按 17pt 字号、中等粗细绘制，和菜单栏其他图标观感一致
         guard let image = NSImage(systemSymbolName: name, accessibilityDescription: "SideLinker")?
-            .withSymbolConfiguration(.init(pointSize: 18, weight: .medium)) else { return }
+            .withSymbolConfiguration(.init(pointSize: 17, weight: .medium)) else { return }
         image.isTemplate = true
         statusItem.button?.image = image
     }
