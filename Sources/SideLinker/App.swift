@@ -109,8 +109,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         _ = gate.update(session: uu.connected, now: Date())
         // 记住的设备连入时自动切换；电脑、手机等其他设备连入时不动
         if !uu.connected { autoSuppressed = false }
-        // 记住的设备改了名字时同步更新
-        for (id, name) in uu.controllers where autoDevices[id].map({ $0 != name }) == true { autoDevices[id] = name }
         if uu.connected, !gate.active, !remoteApplied, !autoSuppressed, !Set(autoDevices.keys).isDisjoint(with: uu.controllers.keys) {
             gate.enter()
         }
@@ -353,11 +351,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.remoteActive = gate.active
         model.busy = busy || (remoteApplied && !gate.active)
         model.controllers = uu.connected ? uu.controllers : [:]
-        // 旧版只存了设备 ID，用日志里见过的名称补上
-        for (id, name) in autoDevices where name == id { if let seen = uu.known[id] { autoDevices[id] = seen.name } }
+        // 名称跟随 UU：设备每次连入，UU 都会在日志里写下它当前的名称，这里取最新的一条
+        for (id, name) in autoDevices { if let seen = uu.known[id], seen.name != name { autoDevices[id] = seen.name } }
         model.autoDevices = autoDevices
         let labels = [1: "Windows", 3: "iOS / iPadOS", 4: "macOS"]
-        model.platforms = uu.known.compactMapValues { labels[$0.platform] }
+        var details: [String: String] = [:]
+        for id in Set(autoDevices.keys).union(uu.controllers.keys) {
+            details[id] = ([uu.known[id].flatMap { labels[$0.platform] }].compactMap { $0 } + [id]).joined(separator: " · ")
+        }
+        model.details = details
         model.launchAtLogin = agent.status == .enabled
     }
 

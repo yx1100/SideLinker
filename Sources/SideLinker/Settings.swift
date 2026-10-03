@@ -17,7 +17,7 @@ final class SettingsModel: ObservableObject {
     @Published var controllers: [String: String] = [:] // 当前连入的设备 ID → 名称
     @Published var autoDevices: [String: String] = [:] // 记住的设备 ID → 名称
     @Published var launchAtLogin = false
-    @Published var platforms: [String: String] = [:] // 设备 ID → 系统，例如 iOS / iPadOS
+    @Published var details: [String: String] = [:] // 设备 ID → 「系统 · 设备 ID」
 
     var setAutoConnect: (Bool) -> Void = { _ in }
     var toggleRemote: () -> Void = {}
@@ -111,10 +111,10 @@ struct SettingsView: View {
                 Text("无").foregroundStyle(.secondary)
             }
             ForEach(model.autoDevices.sorted { $0.value < $1.value }, id: \.key) { id, name in
-                LabeledContent {
-                    Button("忘记") { model.setAutoDevice(id, false) }
-                } label: {
+                HStack {
                     deviceLabel(id, name)
+                    Spacer()
+                    Button("忘记") { model.setAutoDevice(id, false) }
                 }
             }
         }
@@ -132,7 +132,7 @@ struct SettingsView: View {
     private func deviceLabel(_ id: String, _ name: String) -> some View {
         VStack(alignment: .leading) {
             Text(name)
-            if let platform = model.platforms[id] { Text(platform).font(.caption).foregroundStyle(.secondary) }
+            if let detail = model.details[id] { Text(detail).font(.caption).foregroundStyle(.secondary) }
         }
     }
 
