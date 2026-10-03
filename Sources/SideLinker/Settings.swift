@@ -43,7 +43,7 @@ final class SettingsModel: ObservableObject {
     @Published var autoConnect = true
     @Published var uuConnected = false
     @Published var remoteActive = false
-    @Published var activeSize: ScreenSize? // 仅使用 iPad 显示时虚拟屏的尺寸
+    @Published var activeSize: ScreenSize? // 使用 iPad 单屏显示时虚拟屏的尺寸
     @Published var busy = false
     @Published var remoteDevices: [RemoteDevice] = []
     @Published var launchAtLogin = false
@@ -178,7 +178,7 @@ struct SettingsView: View {
                 status(model.uuConnected, on: "已连接", off: "未连接")
             }
             Toggle(isOn: Binding(get: { model.remoteActive }, set: { _ in model.toggleRemote() })) {
-                Text("仅使用 iPad 显示")
+                Text("使用 iPad 单屏显示")
                 Text(model.activeSize.map { "已开启，分辨率 \($0.text)" } ?? "停用其他显示器，仅保留一块与 iPad 尺寸相同的虚拟显示器")
             }
             .disabled(model.busy || !(model.uuConnected || model.remoteActive))
@@ -190,7 +190,7 @@ struct SettingsView: View {
         }
         ForEach(model.remoteDevices) { device in
             Section {
-                Toggle("接入时自动启用「仅使用 iPad 显示」", isOn: Binding(get: { device.auto }, set: { model.setAutoDevice(device.id, $0) }))
+                Toggle("接入时自动启用「使用 iPad 单屏显示」", isOn: Binding(get: { device.auto }, set: { model.setAutoDevice(device.id, $0) }))
                 Picker("屏幕尺寸", selection: Binding(get: { device.size }, set: { model.setScreenSize(device.id, $0) })) {
                     ForEach(ScreenSize.all) { size in
                         Text("\(size.name)　\(size.text)").tag(size)

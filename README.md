@@ -8,7 +8,7 @@ A menu bar app that uses an iPad as the Mac's screen in three situations. The Si
 |---|---|---|
 | Desk Sidecar | The Mac has displays attached | Nothing; use the built-in Sidecar as usual |
 | Portable Sidecar | No display is attached (e.g. a Mac mini on the road) | Connects Sidecar to the iPad at login, making it the only screen |
-| UU Remote | You turn on "仅使用 iPad 显示" in the settings window after connecting with NetEase UU Remote from the iPad | Creates a virtual display matching the screen size you picked for that device (default 2752×2064, 13-inch iPad Pro; iPad Pro 11-inch, iPad Air and iPad mini sizes are available), turns the physical displays off, and restores them 30 seconds after the session ends |
+| UU Remote | You turn on "使用 iPad 单屏显示" in the settings window after connecting with NetEase UU Remote from the iPad | Creates a virtual display matching the screen size you picked for that device (default 2752×2064, 13-inch iPad Pro; iPad Pro 11-inch, iPad Air and iPad mini sizes are available), turns the physical displays off, and restores them 30 seconds after the session ends |
 
 It uses macOS frameworks and private APIs (SidecarCore, CGVirtualDisplay, CGSConfigureDisplayEnabled) and does not need BetterDisplay.
 

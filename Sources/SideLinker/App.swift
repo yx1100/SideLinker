@@ -303,7 +303,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         menu.addItem(.separator())
         menu.addItem(.sectionHeader(title: uu.connected ? "远程连接 · 已连接" : "远程连接 · 未连接"))
-        menu.addItem(info("仅使用 iPad 显示 · \(model.remoteActive ? "已开启" : "未开启")",
+        menu.addItem(info("使用 iPad 单屏显示 · \(model.remoteActive ? "已开启" : "未开启")",
                           detail: activeSize.map { "分辨率 \($0.text)" } ?? "", symbol: "ipad.landscape"))
         let custom = nicknames
         for (id, name) in uu.controllers.sorted(by: { $0.value < $1.value }) {
@@ -349,7 +349,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// 把当前状态写进设置窗口的模型
     private func publish() {
         switch currentState() {
-        case .remote: model.stateTitle = "仅使用 iPad 显示"
+        case .remote: model.stateTitle = "使用 iPad 单屏显示"
         case .restoring: model.stateTitle = "正在恢复物理显示器"
         case .sidecar: model.stateTitle = "随航已连接"
         case .connecting: model.stateTitle = "正在连接随航…"
