@@ -37,7 +37,7 @@ UU 远程的单屏切换：记住的设备（按 UU 设备 ID）连入时自动�
 
 ### 待办
 
-1. 用户在 `artwork/` 放了图标素材（`icon-macos.png`、`icon-ios.png`，提交 `c4de431`），还没有接入 App。需要生成 `.icns`，并在 `build.sh` 和 `Info.plist`（`CFBundleIconFile`）里接上
+1. 已完成：App 图标源图是 `artwork/AppIcon.png`（1024×1024，主体 824×824，透明背景），生成的 `Resources/AppIcon.icns` 由 `build.sh` 复制进 App，`Info.plist` 的 `CFBundleIconFile` 为 `AppIcon`。换图标时用新的 PNG 重新生成 iconset，再用 `iconutil -c icns` 生成
 2. Mac mini 到手后测便携随航：有线连接、开着 Wi-Fi 但不连任何网络时的无线连接、占位屏是否必要（`noDummy` 开关可以做对照测试）
 3. 用户确认没问题后执行 `./build.sh install`，再测登录启动
 4. 是否合并到 main、是否开 PR，由用户决定

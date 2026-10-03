@@ -6,6 +6,8 @@
 	<string>com.yx1100.sidelinker</string>
 	<key>CFBundleName</key>
 	<string>SideLinker</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleExecutable</key>
 	<string>SideLinker</string>
 	<key>CFBundlePackageType</key>
