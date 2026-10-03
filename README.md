@@ -2,7 +2,7 @@
 
 **English** | [简体中文](./README.zh-CN.md)
 
-A menu bar app that uses an iPad as the Mac's screen in three situations. The Sidecar situations are detected automatically. UU Remote switches automatically only for devices you mark in the menu (identified by the device ID in UU's logs); for any other device you trigger it from the settings window (menu bar → 设置…):
+A menu bar app that uses an iPad as the Mac's screen in three situations. The Sidecar situations are detected automatically. UU Remote switches automatically only for devices you mark in the settings window (identified by the device ID in UU's logs); for any other device you trigger it from the settings window (menu bar → 设置…):
 
 | Situation | Detected when | What SideLinker does |
 |---|---|---|
