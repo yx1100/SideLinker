@@ -146,13 +146,15 @@ struct SettingsView: View {
                 Text("开机时若未连接显示器，将自动连接最近使用的 iPad 作为唯一显示器")
             }
         }
-        Section("无线随航条件", isExpanded: $showWirelessTips) {
+        Section(isExpanded: $showWirelessTips) {
             tip("person.crop.circle", "登录同一 Apple 账户", "Mac 与 iPad 需登录同一 Apple 账户，并启用双重认证")
             tip("wifi", "打开 Wi-Fi、蓝牙和接力", "无需接入无线网络，两台设备保持在 10 米范围内即可")
             tip("personalhotspot", "关闭 iPad 个人热点", "个人热点开启时无法使用无线随航")
             tip("cable.connector", "建议携带 USB-C 线缆", "有线连接不受无线条件限制；首次连接时需在 iPad 上信任此电脑")
+        } header: {
+            expandableHeader("无线随航条件", $showWirelessTips)
         }
-        Section("无显示器开机准备", isExpanded: $showBootTips) {
+        Section(isExpanded: $showBootTips) {
             HStack {
                 tip("lock.shield", "关闭文件保险箱并启用自动登录", "文件保险箱开启时，Mac 开机后将停留在登录界面，无法自动连接")
                 Spacer()
@@ -163,6 +165,8 @@ struct SettingsView: View {
             tip("power", "启用登录时启动", "位于「通用」设置，确保开机后 SideLinker 自动运行")
             tip("clock.arrow.circlepath", "出行前完成一次连接", "SideLinker 将优先连接最近使用的 iPad")
             tip("ipad.landscape", "保持 iPad 解锁并靠近 Mac", "iPad 端无需其他操作，连接后即作为 Mac 的显示器")
+        } header: {
+            expandableHeader("无显示器开机准备", $showBootTips)
         }
     }
 
@@ -219,6 +223,20 @@ struct SettingsView: View {
     }
 
     // MARK: 组件
+
+    /// 可折叠分组的标题：整行都可点击展开或收起，不只是箭头
+    private func expandableHeader(_ title: String, _ expanded: Binding<Bool>) -> some View {
+        Button {
+            withAnimation { expanded.wrappedValue.toggle() }
+        } label: {
+            HStack {
+                Text(title)
+                Spacer()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
 
     /// 侧栏顶部：App 图标、名称和版本
     private var appHeader: some View {
