@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import ServiceManagement
 import UserNotifications
 
@@ -31,10 +32,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var nextAttempt = Date.distantPast
     private var connecting = false
 
-    /// 连入时自动切换单屏的设备 ID
-    private var autoDevices: Set<String> {
-        get { Set(defaults.stringArray(forKey: "autoDevices") ?? []) }
-        set { defaults.set(Array(newValue), forKey: "autoDevices") }
+    private let model = SettingsModel()
+    private var settingsWindow: NSWindow?
+
+    /// 连入时自动切换单屏的设备：ID → 名称（兼容旧版只存 ID 的数组）
+    private var autoDevices: [String: String] {
+        get {
+            if let names = defaults.dictionary(forKey: "autoDevices") as? [String: String] { return names }
+            return Dictionary(uniqueKeysWithValues: (defaults.stringArray(forKey: "autoDevices") ?? []).map { ($0, $0) })
+        }
+        set { defaults.set(newValue, forKey: "autoDevices") }
     }
 
     private var autoEnabled: Bool {
@@ -46,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let id = Bundle.main.bundleIdentifier, NSRunningApplication.runningApplications(withBundleIdentifier: id).count > 1 {
             exit(0)
         }
+        bindModel()
         refreshIcon()
         let menu = NSMenu()
         menu.delegate = self
@@ -66,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             self?.evaluatePortable()
             self?.refreshIcon()
+            self?.publish()
         }
     }
 
@@ -94,12 +103,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         _ = gate.update(session: uu.connected, now: Date())
         // 记住的设备连入时自动切换；电脑、手机等其他设备连入时不动
         if !uu.connected { autoSuppressed = false }
-        if uu.connected, !gate.active, !remoteApplied, !autoSuppressed, !autoDevices.isDisjoint(with: uu.controllers.keys) {
+        // 记住的设备改了名字时同步更新
+        for (id, name) in uu.controllers where autoDevices[id].map({ $0 != name }) == true { autoDevices[id] = name }
+        if uu.connected, !gate.active, !remoteApplied, !autoSuppressed, !Set(autoDevices.keys).isDisjoint(with: uu.controllers.keys) {
             gate.enter()
         }
         if gate.active && uu.connected { lockAfterRestore = true }
         let locked = Session.isLocked
         if locked && !gate.active { lockAfterRestore = false } // 已被锁过（如 UU 自动锁屏），解锁后不再重复锁
+        if settingsWindow?.isVisible == true { publish() }
         guard !busy, !locked else { return }
         if gate.active && remoteScreen == nil {
             enterRemote()
@@ -254,109 +266,123 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.button?.image = image
     }
 
+    /// 菜单栏只呈现信息，可点的只有「设置…」和「退出」
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         refreshIcon()
+        publish()
 
-        let (title, detail): (String, String)
-        switch currentState() {
-        case .remote: (title, detail) = ("iPad 单屏中", "")
-        case .restoring: (title, detail) = ("正在恢复物理显示器", Session.isLocked ? "解锁后继续" : "")
-        case .sidecar(let name): (title, detail) = ("随航已连接", name)
-        case .connecting: (title, detail) = ("正在连接随航…", "")
-        case .waiting: (title, detail) = ("等待 iPad", "")
-        case .idle: (title, detail) = ("就绪", "")
-        }
-        let status = item(title, nil, symbol: nil, detail: detail)
-        status.isEnabled = false
-        menu.addItem(status)
-
+        menu.addItem(info(model.stateTitle, detail: stateDetail()))
         menu.addItem(.separator())
         menu.addItem(.sectionHeader(title: "随航"))
-        let connected = Sidecar.connected()
-        let devices = Sidecar.devices()
-        // 只显示状态：手动连接、断开用控制中心
-        for device in devices {
-            let isOn = connected.contains(device)
-            let deviceItem = item(Sidecar.name(device), nil, symbol: isOn ? "ipad.landscape.badge.play" : "ipad.landscape",
-                                  detail: isOn ? "已连接" : "未连接")
-            deviceItem.isEnabled = false
-            menu.addItem(deviceItem)
+        if model.sidecarDevices.isEmpty { menu.addItem(info("附近没有 iPad")) }
+        for device in model.sidecarDevices {
+            menu.addItem(info(device.name, detail: device.connected ? "已连接" : "未连接",
+                              symbol: device.connected ? "ipad.landscape.badge.play" : "ipad.landscape"))
         }
-        if devices.isEmpty {
-            let none = item("附近没有可用的 iPad", nil, symbol: "ipad.landscape", detail: "")
-            none.isEnabled = false
-            menu.addItem(none)
-        }
-        menu.addItem(item("没有显示器时自动连接", #selector(toggleAuto), symbol: nil, detail: "", checked: autoEnabled))
-
         menu.addItem(.separator())
         menu.addItem(.sectionHeader(title: uu.connected ? "UU 远程 · 已连接" : "UU 远程 · 未连接"))
-        // 单屏只在 UU 连接中有意义
-        if gate.active {
-            menu.addItem(item("恢复物理显示器", busy ? nil : #selector(toggleRemote), symbol: "display.2", detail: ""))
-        } else if uu.connected {
-            menu.addItem(item("切换到 iPad 单屏", busy || remoteApplied ? nil : #selector(toggleRemote), symbol: "rectangle.inset.filled",
-                              detail: ""))
-        }
-        if uu.connected {
-            for (id, alias) in uu.controllers.sorted(by: { $0.value < $1.value }) {
-                let device = item("\(alias) 连入时自动切换", #selector(toggleAutoDevice(_:)), symbol: nil,
-                                  detail: "", checked: autoDevices.contains(id))
-                device.representedObject = id
-                menu.addItem(device)
-            }
-        } else if !autoDevices.isEmpty {
-            menu.addItem(item("忘记自动切换的设备（\(autoDevices.count) 台）", #selector(forgetAutoDevices), symbol: nil, detail: ""))
-        }
+        menu.addItem(info(model.remoteActive ? "iPad 单屏已开启" : "iPad 单屏未开启", symbol: "rectangle.inset.filled"))
+        for name in uu.controllers.values.sorted() { menu.addItem(info(name, detail: "已连入", symbol: "ipad.landscape")) }
 
         menu.addItem(.separator())
-        menu.addItem(item("登录时启动", #selector(toggleLogin), symbol: nil, detail: "", checked: agent.status == .enabled))
-        let quit = NSMenuItem(title: "退出 SideLinker", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        menu.addItem(quit)
+        let settings = NSMenuItem(title: "设置…", action: #selector(showSettings), keyEquivalent: ",")
+        settings.target = self
+        menu.addItem(settings)
+        menu.addItem(NSMenuItem(title: "退出 SideLinker", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
 
-    private func item(_ title: String, _ action: Selector?, symbol: String?, detail: String, checked: Bool = false) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-        item.target = self
-        item.state = checked ? .on : .off
+    private func stateDetail() -> String {
+        switch currentState() {
+        case .restoring: Session.isLocked ? "解锁后继续" : ""
+        case .sidecar(let name): name
+        default: ""
+        }
+    }
+
+    /// 不可点的信息行
+    private func info(_ title: String, detail: String = "", symbol: String? = nil) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.isEnabled = false
         if let symbol { item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) }
         if #available(macOS 14.4, *), !detail.isEmpty { item.subtitle = detail }
         return item
     }
 
-    @objc private func toggleAuto() {
-        autoEnabled.toggle()
-        if !autoEnabled { leavePortable() }
-    }
+    // MARK: 设置窗口
 
-    @objc private func toggleRemote() {
-        if gate.active {
-            gate.exit()
-            lockAfterRestore = false
-            autoSuppressed = uu.connected
-        } else {
-            gate.enter()
+    @objc private func showSettings() {
+        if settingsWindow == nil {
+            let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(model: model)))
+            window.title = "SideLinker 设置"
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+            window.isReleasedWhenClosed = false
+            window.setContentSize(NSSize(width: 680, height: 460))
+            window.center()
+            settingsWindow = window
         }
-        tickRemote()
-        refreshIcon()
+        publish()
+        NSApp.activate()
+        settingsWindow?.makeKeyAndOrderFront(nil)
     }
 
-    @objc private func toggleAutoDevice(_ sender: NSMenuItem) {
-        guard let id = sender.representedObject as? String else { return }
-        if autoDevices.contains(id) { autoDevices.remove(id) } else { autoDevices.insert(id) }
+    /// 把当前状态写进设置窗口的模型
+    private func publish() {
+        switch currentState() {
+        case .remote: model.stateTitle = "iPad 单屏中"
+        case .restoring: model.stateTitle = "正在恢复物理显示器"
+        case .sidecar: model.stateTitle = "随航已连接"
+        case .connecting: model.stateTitle = "正在连接随航…"
+        case .waiting: model.stateTitle = "等待 iPad"
+        case .idle: model.stateTitle = "就绪"
+        }
+        let connected = Sidecar.connected()
+        model.sidecarDevices = Sidecar.devices().map {
+            .init(id: Sidecar.identifier($0), name: Sidecar.name($0), connected: connected.contains($0))
+        }
+        model.autoConnect = autoEnabled
+        model.uuConnected = uu.connected
+        model.remoteActive = gate.active
+        model.busy = busy || (remoteApplied && !gate.active)
+        model.controllers = uu.connected ? uu.controllers : [:]
+        model.autoDevices = autoDevices
+        model.launchAtLogin = agent.status == .enabled
     }
 
-    @objc private func forgetAutoDevices() {
-        autoDevices = []
-    }
-
-    @objc private func toggleLogin() {
-        do {
-            if agent.status == .enabled { try agent.unregister() } else { try agent.register() }
-            if agent.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
-        } catch {
-            notify("设置登录时启动失败：\(error.localizedDescription)")
+    private func bindModel() {
+        model.setAutoConnect = { [weak self] on in
+            guard let self else { return }
+            autoEnabled = on
+            if !on { leavePortable() }
+            publish()
+        }
+        model.toggleRemote = { [weak self] in
+            guard let self else { return }
+            if gate.active {
+                gate.exit()
+                lockAfterRestore = false
+                autoSuppressed = uu.connected
+            } else {
+                gate.enter()
+            }
+            tickRemote()
+            refreshIcon()
+            publish()
+        }
+        model.setAutoDevice = { [weak self] id, on in
+            guard let self else { return }
+            autoDevices[id] = on ? (uu.controllers[id] ?? autoDevices[id] ?? id) : nil
+            publish()
+        }
+        model.setLaunchAtLogin = { [weak self] on in
+            guard let self else { return }
+            do {
+                if on { try agent.register() } else { try agent.unregister() }
+                if agent.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
+            } catch {
+                notify("设置登录时启动失败：\(error.localizedDescription)")
+            }
+            publish()
         }
     }
 
