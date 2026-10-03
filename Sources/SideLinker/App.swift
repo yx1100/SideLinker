@@ -44,6 +44,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         set { defaults.set(newValue, forKey: "autoDevices") }
     }
 
+    /// 每台设备选的屏幕尺寸：设备 ID → ScreenSize.id
+    private var deviceSizes: [String: String] {
+        get { defaults.dictionary(forKey: "deviceScreenSizes") as? [String: String] ?? [:] }
+        set { defaults.set(newValue, forKey: "deviceScreenSizes") }
+    }
+    private var activeSize: ScreenSize? // 只用 iPad 显示时虚拟屏的尺寸
+
     private var autoEnabled: Bool {
         get { !defaults.bool(forKey: "autoDisabled") }
         set { defaults.set(!newValue, forKey: "autoDisabled") }
@@ -126,13 +133,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func enterRemote() {
         leavePortable()
-        // 13 英寸 iPad Pro 横屏：2752×2064 像素，264 ppi
-        guard let screen = VirtualScreen(name: "SideLinker iPad", width: 2752, height: 2064, ppi: 264, productID: 1) else {
+        // 尺寸按当前连入的设备选；有多台时优先记住的设备，没选过的用 13 英寸 iPad Pro
+        let controller = uu.controllers.keys.sorted { autoDevices[$0] != nil && autoDevices[$1] == nil }.first
+        let size = ScreenSize.from(id: controller.flatMap { deviceSizes[$0] })
+        guard let screen = VirtualScreen(name: "SideLinker iPad", width: UInt32(size.width), height: UInt32(size.height),
+                                         ppi: 264, productID: 1) else {
             gate.exit()
             notify("虚拟屏创建失败")
             return
         }
         remoteScreen = screen
+        activeSize = size
         busy = true
         let modes = stableModes
         work.async {
@@ -157,6 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self.remoteScreen = screen // 恢复途中被锁屏：留着虚拟屏，解锁后重试
                     return
                 }
+                self.activeSize = nil
                 self.refreshIcon()
                 if self.lockAfterRestore { Session.lock() }
                 self.lockAfterRestore = false
@@ -276,32 +288,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshIcon()
         publish()
 
-        menu.addItem(info(model.stateTitle, detail: stateDetail()))
+        menu.addItem(info(model.stateTitle, detail: Session.isLocked && remoteApplied && !gate.active ? "解锁后继续" : ""))
         menu.addItem(.separator())
         menu.addItem(.sectionHeader(title: "随航"))
         if model.sidecarDevices.isEmpty { menu.addItem(info("附近没有 iPad")) }
         for device in model.sidecarDevices {
-            menu.addItem(info(device.name, detail: device.connected ? "已连接" : "未连接",
+            menu.addItem(info("\(device.name) · \(device.connected ? "已连接" : "未连接")",
                               symbol: device.connected ? "ipad.landscape.badge.play" : "ipad.landscape"))
         }
         menu.addItem(.separator())
-        menu.addItem(.sectionHeader(title: uu.connected ? "UU 远程 · 已连接" : "UU 远程 · 未连接"))
-        menu.addItem(info(model.remoteActive ? "iPad 单屏已开启" : "iPad 单屏未开启", symbol: "rectangle.inset.filled"))
-        for name in uu.controllers.values.sorted() { menu.addItem(info(name, detail: "已连入", symbol: "ipad.landscape")) }
+        menu.addItem(.sectionHeader(title: uu.connected ? "远程连接 · 已连接" : "远程连接 · 未连接"))
+        menu.addItem(info("只用 iPad 显示 · \(model.remoteActive ? "已开启" : "未开启")",
+                          detail: activeSize.map { "屏幕 \($0.text)" } ?? "", symbol: "ipad.landscape"))
+        for name in uu.controllers.values.sorted() { menu.addItem(info("\(name) · 已连入", symbol: "ipad.landscape")) }
 
         menu.addItem(.separator())
         let settings = NSMenuItem(title: "设置…", action: #selector(showSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
         menu.addItem(NSMenuItem(title: "退出 SideLinker", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-    }
-
-    private func stateDetail() -> String {
-        switch currentState() {
-        case .restoring: Session.isLocked ? "解锁后继续" : ""
-        case .sidecar(let name): name
-        default: ""
-        }
     }
 
     /// 不可点的信息行
@@ -336,7 +341,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// 把当前状态写进设置窗口的模型
     private func publish() {
         switch currentState() {
-        case .remote: model.stateTitle = "iPad 单屏中"
+        case .remote: model.stateTitle = "只用 iPad 显示中"
         case .restoring: model.stateTitle = "正在恢复物理显示器"
         case .sidecar: model.stateTitle = "随航已连接"
         case .connecting: model.stateTitle = "正在连接随航…"
@@ -351,18 +356,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.autoConnect = autoEnabled
         model.uuConnected = uu.connected
         model.remoteActive = gate.active
+        model.activeSize = activeSize
         model.busy = busy || (remoteApplied && !gate.active)
-        model.controllers = uu.connected ? uu.controllers : [:]
         // 名称跟随 UU：设备每次连入，UU 都会在日志里写下它当前的名称，这里取最新的一条
         for (id, name) in autoDevices { if let seen = uu.known[id], seen.name != name { autoDevices[id] = seen.name } }
-        model.autoDevices = autoDevices
-        let labels = [1: "Windows", 3: "iOS / iPadOS", 4: "macOS"]
-        var details: [String: String] = [:]
-        for id in Set(autoDevices.keys).union(uu.controllers.keys) {
-            details[id] = ([uu.known[id].flatMap { labels[$0.platform] }].compactMap { $0 } + [id]).joined(separator: " · ")
+        let controllers = uu.connected ? uu.controllers : [:]
+        let names = autoDevices.merging(controllers) { _, new in new }
+        let sizes = deviceSizes
+        model.remoteDevices = names.sorted { $0.value < $1.value }.map { id, name in
+            .init(id: id, name: name, detail: ([platformName(id, name)].compactMap { $0 } + [id]).joined(separator: " · "),
+                  connected: controllers[id] != nil, auto: autoDevices[id] != nil, size: ScreenSize.from(id: sizes[id]))
         }
-        model.details = details
         model.launchAtLogin = agent.status == .enabled
+    }
+
+    /// UU 的平台编号：1 Windows，3 iPhone 和 iPad 共用，4 macOS（按日志推断）。3 按名称区分 iPad 和 iPhone
+    private func platformName(_ id: String, _ name: String) -> String? {
+        switch uu.known[id]?.platform {
+        case 1: "Windows"
+        case 3: name.localizedCaseInsensitiveContains("iPhone") ? "iOS" : "iPadOS"
+        case 4: "macOS"
+        default: nil
+        }
     }
 
     private func bindModel() {
@@ -388,6 +403,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.setAutoDevice = { [weak self] id, on in
             guard let self else { return }
             autoDevices[id] = on ? (uu.controllers[id] ?? autoDevices[id] ?? id) : nil
+            publish()
+        }
+        model.setScreenSize = { [weak self] id, size in
+            guard let self else { return }
+            deviceSizes[id] = size.id
             publish()
         }
         model.setLaunchAtLogin = { [weak self] on in

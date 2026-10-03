@@ -1,5 +1,25 @@
 import SwiftUI
 
+/// 常见 iPad 的横屏像素尺寸。UU 不提供连入设备的屏幕信息，由用户为每台设备选一次
+struct ScreenSize: Hashable, Identifiable {
+    let name: String
+    let width: Int
+    let height: Int
+    var id: String { "\(width)x\(height)" }
+    var text: String { "\(width) × \(height)" }
+
+    static let all = [
+        ScreenSize(name: "iPad Pro 13 英寸（M4 及以后）", width: 2752, height: 2064),
+        ScreenSize(name: "iPad Pro 12.9 英寸 / iPad Air 13 英寸", width: 2732, height: 2048),
+        ScreenSize(name: "iPad Pro 11 英寸（M4 及以后）", width: 2420, height: 1668),
+        ScreenSize(name: "iPad Pro 11 英寸（M2 及以前）", width: 2388, height: 1668),
+        ScreenSize(name: "iPad Air 11 英寸 / iPad（第 10 代及以后）", width: 2360, height: 1640),
+        ScreenSize(name: "iPad mini（第 6 代及以后）", width: 2266, height: 1488),
+    ]
+    static let standard = all[0]
+    static func from(id: String?) -> ScreenSize { all.first { $0.id == id } ?? standard }
+}
+
 /// 设置窗口显示的状态快照和操作。逻辑在 AppDelegate，状态变化时由它写入
 final class SettingsModel: ObservableObject {
     struct Device: Identifiable {
@@ -8,20 +28,30 @@ final class SettingsModel: ObservableObject {
         let connected: Bool
     }
 
+    /// 通过 UU 连入过的设备：当前连入的和已记住的
+    struct RemoteDevice: Identifiable {
+        let id: String
+        let name: String
+        let detail: String // 「iPadOS · 设备 ID」
+        let connected: Bool
+        let auto: Bool
+        let size: ScreenSize
+    }
+
     @Published var stateTitle = "就绪"
     @Published var sidecarDevices: [Device] = []
     @Published var autoConnect = true
     @Published var uuConnected = false
     @Published var remoteActive = false
+    @Published var activeSize: ScreenSize? // 只用 iPad 显示时虚拟屏的尺寸
     @Published var busy = false
-    @Published var controllers: [String: String] = [:] // 当前连入的设备 ID → 名称
-    @Published var autoDevices: [String: String] = [:] // 记住的设备 ID → 名称
+    @Published var remoteDevices: [RemoteDevice] = []
     @Published var launchAtLogin = false
-    @Published var details: [String: String] = [:] // 设备 ID → 「系统 · 设备 ID」
 
     var setAutoConnect: (Bool) -> Void = { _ in }
     var toggleRemote: () -> Void = {}
     var setAutoDevice: (String, Bool) -> Void = { _, _ in }
+    var setScreenSize: (String, ScreenSize) -> Void = { _, _ in }
     var setLaunchAtLogin: (Bool) -> Void = { _ in }
 }
 
@@ -78,70 +108,81 @@ struct SettingsView: View {
             }
         }
         .ignoresSafeArea()
-        .frame(minWidth: 620, minHeight: 420)
+        .frame(minWidth: 640, minHeight: 480)
     }
 
+    // MARK: 随航
+
     @ViewBuilder private var sidecar: some View {
-        // 设备列表是只读状态，用普通文本行；「自动连接」是设置项，用 Toggle 行，两者区分开
         Section("附近的 iPad") {
             if model.sidecarDevices.isEmpty {
-                Text("未发现").foregroundStyle(.secondary)
+                Text("未发现 iPad").foregroundStyle(.secondary)
             }
             ForEach(model.sidecarDevices) { device in
-                HStack {
+                LabeledContent {
+                    status(device.connected, on: "已连接", off: "未连接")
+                } label: {
                     Label(device.name, systemImage: "ipad.landscape")
-                    Spacer()
-                    Text(device.connected ? "已连接" : "未连接")
-                        .font(.callout)
-                        .foregroundStyle(device.connected ? .green : .secondary)
                 }
             }
         }
         Section {
-            Toggle("没有显示器时自动连接", isOn: binding(\.autoConnect, model.setAutoConnect))
-        } footer: {
-            Text("开机时没有连接任何显示器，SideLinker 会自动连接上次使用的 iPad 作为唯一屏幕。适合带 Mac mini 出门、用 iPad 当显示器的场景。\n\n连接前请确认 iPad 没有开启个人热点。户外建议用 USB-C 线连接，更稳定。")
+            Toggle(isOn: binding(\.autoConnect, model.setAutoConnect)) {
+                Text("没有显示器时自动连接")
+                Text("开机时没有显示器，自动连接上次使用的 iPad，作为唯一屏幕")
+            }
         }
-        Section {
-            Label("如果 Mac 开启了文件保险箱（FileVault），无显示器开机时将无法进入系统，此功能不可用。需要在「系统设置 → 隐私与安全性」中关闭文件保险箱，或改用「自动登录」。", systemImage: "exclamationmark.triangle")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+        Section("使用须知") {
+            tip("personalhotspot", "不要开启 iPad 的个人热点", "无线随航要求 iPad 不共享蜂窝网络")
+            tip("cable.connector", "户外建议用 USB-C 线连接", "不需要 Wi-Fi 网络，还能给 iPad 充电")
+            LabeledContent {
+                Button("打开设置") {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?FileVault")!)
+                }
+            } label: {
+                tip("lock.shield", "文件保险箱会挡住无显示器开机", "开启时无法自动登录，需关闭文件保险箱并开启自动登录")
+            }
         }
     }
+
+    // MARK: 远程连接
 
     @ViewBuilder private var remote: some View {
         Section("状态") {
-            LabeledContent("UU 远程", value: model.uuConnected ? "已连接" : "未连接")
-            LabeledContent("iPad 单屏", value: model.remoteActive ? "已开启" : "未开启")
-            HStack {
-                Spacer()
-                Button(model.remoteActive ? "恢复物理显示器" : "切换到 iPad 单屏", action: model.toggleRemote)
-                    .disabled(model.busy || !(model.uuConnected || model.remoteActive))
+            LabeledContent("UU 远程") {
+                status(model.uuConnected, on: "已连接", off: "未连接")
+            }
+            Toggle(isOn: Binding(get: { model.remoteActive }, set: { _ in model.toggleRemote() })) {
+                Text("只用 iPad 显示")
+                Text(model.activeSize.map { "已开启，屏幕 \($0.text)" } ?? "关闭其他显示器，只保留一块与 iPad 同尺寸的屏幕")
+            }
+            .disabled(model.busy || !(model.uuConnected || model.remoteActive))
+        }
+        if model.remoteDevices.isEmpty {
+            Section("设备") {
+                Text("还没有通过 UU 连入过的设备").foregroundStyle(.secondary)
             }
         }
-        Section("连入时自动切换") {
-            if model.controllers.isEmpty {
-                Text("当前没有连入的设备").foregroundStyle(.secondary)
-            }
-            ForEach(model.controllers.sorted { $0.value < $1.value }, id: \.key) { id, name in
-                Toggle(isOn: Binding(get: { model.autoDevices[id] != nil }, set: { model.setAutoDevice(id, $0) })) {
-                    deviceLabel(id, name)
+        ForEach(model.remoteDevices) { device in
+            Section {
+                Toggle("连入时自动开启「只用 iPad 显示」", isOn: Binding(get: { device.auto }, set: { model.setAutoDevice(device.id, $0) }))
+                Picker("屏幕尺寸", selection: Binding(get: { device.size }, set: { model.setScreenSize(device.id, $0) })) {
+                    ForEach(ScreenSize.all) { size in
+                        Text("\(size.name)　\(size.text)").tag(size)
+                    }
                 }
-            }
-        }
-        Section("已记住的设备") {
-            if model.autoDevices.isEmpty {
-                Text("无").foregroundStyle(.secondary)
-            }
-            ForEach(model.autoDevices.sorted { $0.value < $1.value }, id: \.key) { id, name in
-                HStack {
-                    deviceLabel(id, name)
+            } header: {
+                HStack(alignment: .firstTextBaseline) {
+                    Label(device.name, systemImage: "ipad.landscape")
+                    Text(device.detail).font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    Button("忘记") { model.setAutoDevice(id, false) }
+                    if device.connected { status(true, on: "已连入", off: "") }
                 }
             }
         }
     }
+
+    // MARK: 通用
 
     @ViewBuilder private var general: some View {
         Section {
@@ -152,10 +193,24 @@ struct SettingsView: View {
         }
     }
 
-    private func deviceLabel(_ id: String, _ name: String) -> some View {
-        VStack(alignment: .leading) {
-            Text(name)
-            if let detail = model.details[id] { Text(detail).font(.caption).foregroundStyle(.secondary) }
+    // MARK: 组件
+
+    /// 系统设置风格的状态：圆点加文字
+    private func status(_ on: Bool, on onText: String, off offText: String) -> some View {
+        HStack(spacing: 6) {
+            Circle().fill(on ? Color.green : Color.secondary.opacity(0.5)).frame(width: 8, height: 8)
+            Text(on ? onText : offText).foregroundStyle(.secondary)
+        }
+    }
+
+    private func tip(_ symbol: String, _ title: String, _ detail: String) -> some View {
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text(detail).font(.caption).foregroundStyle(.secondary)
+            }
+        } icon: {
+            Image(systemName: symbol).foregroundStyle(.secondary)
         }
     }
 
