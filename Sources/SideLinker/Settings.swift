@@ -39,7 +39,10 @@ private enum Pane: String, CaseIterable, Identifiable {
 
 struct SettingsView: View {
     @ObservedObject var model: SettingsModel
-    @State private var pane: Pane? = .sidecar
+    // 上次打开的页签存在 UserDefaults，窗口关闭重开后还原
+    @State private var pane: Pane? = {
+        UserDefaults.standard.string(forKey: "settingsPane").flatMap(Pane.init(rawValue:))
+    }() ?? .sidecar
 
     var body: some View {
         // 不用 NavigationSplitView：放在 AppKit 窗口里时，侧栏和标题栏的分隔线会错位
@@ -47,6 +50,7 @@ struct SettingsView: View {
             List(Pane.allCases, selection: $pane) { pane in
                 Label(pane.rawValue, systemImage: pane.symbol)
             }
+            .onChange(of: pane) { UserDefaults.standard.set(pane?.rawValue, forKey: "settingsPane") }
             .listStyle(.sidebar)
             .safeAreaPadding(.top, 40) // 让出红绿灯按钮
             .frame(width: 180)

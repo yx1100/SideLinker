@@ -66,7 +66,11 @@ final class UUWatcher {
         if let file {
             let result = read(file, from: offset)
             offset = result.end
-            if let state = result.state { connected = state == 5 }
+            if let state = result.state {
+                connected = state == 5
+                // 断开时清掉连入设备：device_info_changed 只在会话期间推送，被控离线后旧记录会残留
+                if !connected { participants = [:] }
+            }
         }
         onPoll?()
     }

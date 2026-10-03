@@ -17,7 +17,8 @@ final class VirtualScreen {
         descriptor.sizeInMillimeters = CGSize(width: Double(width) / ppi * 25.4, height: Double(height) / ppi * 25.4)
         descriptor.vendorID = 0x5344
         descriptor.productID = productID
-        descriptor.serialNum = 1
+        // 随机序列号：两个实例（如安装版和开发版同时跑）的虚拟屏不会被系统当成同一块
+        descriptor.serialNum = UInt32.random(in: 1...UInt32.max)
         guard let display = CGVirtualDisplay(descriptor: descriptor) else { return nil }
         let settings = CGVirtualDisplaySettings()
         settings.hiDPI = 1
@@ -111,6 +112,7 @@ enum Displays {
         guard !saved.isEmpty else { return true }
         let present = saved.filter { online().contains(CGDirectDisplayID($0[0])) }
         // 分辨率和位置一起设：只设位置时，系统会把 UU 在会话中改过的分辨率重新套用回来。设完核对一次，不对再设
+        var modesMatch = false
         for _ in 0..<2 {
             configure { config in
                 for row in present {
@@ -122,11 +124,12 @@ enum Displays {
                 }
             }
             Thread.sleep(forTimeInterval: 3)
-            let modesMatch = present.allSatisfy {
+            modesMatch = present.allSatisfy {
                 $0.count <= 3 || $0[3] < 0 || CGDisplayCopyDisplayMode(CGDirectDisplayID($0[0]))?.ioDisplayModeID == Int32($0[3])
             }
             if modesMatch { break }
         }
+        if !modesMatch { NSLog("SideLinker: 有显示器的分辨率未能还原") }
         UserDefaults.standard.removeObject(forKey: savedKey)
         return true
     }
