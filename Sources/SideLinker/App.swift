@@ -343,9 +343,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .waiting: model.stateTitle = "等待 iPad"
         case .idle: model.stateTitle = "就绪"
         }
-        let connected = Sidecar.connected()
+        // SidecarCore 每次调用 devices/connectedDevices 可能返回新对象实例，不能用引用比较，用 identifier 匹配
+        let connectedIDs = Set(Sidecar.connected().map { Sidecar.identifier($0) })
         model.sidecarDevices = Sidecar.devices().map {
-            .init(id: Sidecar.identifier($0), name: Sidecar.name($0), connected: connected.contains($0))
+            .init(id: Sidecar.identifier($0), name: Sidecar.name($0), connected: connectedIDs.contains(Sidecar.identifier($0)))
         }
         model.autoConnect = autoEnabled
         model.uuConnected = uu.connected

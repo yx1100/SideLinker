@@ -53,9 +53,10 @@ enum Sidecar {
         }
         if group.wait(timeout: .now() + timeout) == .success { return succeeded }
         // 超时后系统可能仍在连接：以 connectedDevices 为准，并等旧请求返回，避免和下一次请求叠加
-        if connected().contains(device) { return true }
+        // connectedDevices 每次调用可能返回新对象实例，用 identifier 匹配，不能用引用比较
+        if connected().contains(where: { identifier($0) == identifier(device) }) { return true }
         _ = group.wait(timeout: .now() + timeout)
-        return connected().contains(device)
+        return connected().contains(where: { identifier($0) == identifier(device) })
     }
 
     static func disconnect(_ device: NSObject, timeout: TimeInterval = 10) -> Bool {

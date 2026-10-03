@@ -4,10 +4,10 @@ import AppKit
 let arguments = Array(CommandLine.arguments.dropFirst())
 switch arguments.first {
 case "devices":
-    let connected = Sidecar.connected()
+    let connectedIDs = Set(Sidecar.connected().map { Sidecar.identifier($0) })
     let devices = Sidecar.devices()
     print("发现 \(devices.count) 个设备")
-    devices.forEach { print(" - \(Sidecar.name($0))\(connected.contains($0) ? "（已连接）" : "")") }
+    devices.forEach { print(" - \(Sidecar.name($0))\(connectedIDs.contains(Sidecar.identifier($0)) ? "（已连接）" : "")") }
     exit(0)
 case "connect":
     let name = arguments.dropFirst().first?.lowercased()
