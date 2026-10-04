@@ -1,6 +1,6 @@
 # SideLinker 项目交接文档
 
-写给接手的 AI（Kimi K3）。读完这份文档再动代码。仓库：`yx1100/SideLinker`，工作分支 `feature/menubar-app`（已推送，未合并到 main，未开 PR）。
+写给接手的 AI（Kimi K3）。读完这份文档再动代码。仓库：`yx1100/SideLinker`，直接在 main 分支上开发。
 
 ## 1. 项目目标
 
@@ -25,22 +25,21 @@ UU 远程的单屏切换：记住的设备（按 UU 设备 ID）连入时自动�
 - 虚拟屏：1376×1032 点、2752×2064 像素的 HiDPI 模式
 - UU 远程单屏：用 iPad 实测三轮。切换约 12 秒，恢复约 3 秒后锁屏，分辨率、排列、主屏都能还原
 - 锁屏时的延后处理、崩溃后恢复、分辨率记忆
-- 菜单栏只读信息 + 设置窗口（SwiftUI，自绘侧栏：随航 / UU 远程 / 通用）
+- 菜单栏 + 设置窗口（SwiftUI，自绘侧栏：随航 / 远程连接 / 通用）
 - `selftest` 全部通过
 
 ### 已实现但未实测
 
 - **便携随航整条链路**：用户还没有 Mac mini。占位虚拟屏、自动重连、镜像这些逻辑只在代码层面写好，没有在无屏开机的机器上跑过
 - **UU 设备记忆后的自动切换**：解析已用真实日志验证，但「勾选后断开再连入自动切换」没有端到端测过
-- **最近两次界面改动**（设备显示「系统 · 设备 ID」、「忘记」按钮垂直居中）：编译通过，没有截图确认
+- **需要点击才能看到的界面**：菜单栏滑动开关与上方各行的对齐、设备名称编辑、使用须知的展开、「忘记此设备」的确认提示。编译通过，没有截图确认
 - **登录时启动**（`SMAppService.agent`）：没有在 `/Applications` 安装版上注册测试过
 
 ### 待办
 
 1. 已完成：App 图标源图是 `artwork/AppIcon.png`（1024×1024，主体 824×824，透明背景），生成的 `Resources/AppIcon.icns` 由 `build.sh` 复制进 App，`Info.plist` 的 `CFBundleIconFile` 为 `AppIcon`。换图标时用新的 PNG 重新生成 iconset，再用 `iconutil -c icns` 生成
 2. Mac mini 到手后测便携随航：有线连接、开着 Wi-Fi 但不连任何网络时的无线连接、占位屏是否必要（`noDummy` 开关可以做对照测试）
-3. 用户确认没问题后执行 `./build.sh install`，再测登录启动
-4. 是否合并到 main、是否开 PR，由用户决定
+3. 测试登录时启动
 
 ## 3. 代码结构
 
@@ -82,7 +81,7 @@ build.sh                              swift build → build/SideLinker.app → a
 - 连入设备：`device_info_changed` 推送里的 `participants_info`，含 `alias`、`device_id`、`platform`。平台编号是推断的：1 Windows，3 iOS/iPadOS，4 macOS（解析时排除 4）。**UU 不提供设备型号**
 - 设备名称只出现在设备连入时写的日志里。App 启动时扫全部日志建立 `known` 表，记住的设备名称以最新一条为准
 - `RemoteGate`：只能手动进入或由记住的设备触发；断开满 30 秒才退出（日志里见过断开 22 秒后又连上）；没有会话时进入，30 秒后自动退出
-- **要求用户关闭 UU 的「结束远程自动锁屏」**：否则 UU 先锁屏，物理屏要等解锁后才能恢复。现在由 SideLinker 恢复后调用 `SACLockScreenImmediate`（login.framework）锁屏。手动点「恢复物理显示器」不锁屏
+- **要求用户关闭 UU 的「结束远程自动锁屏」**：否则 UU 先锁屏，物理屏要等解锁后才能恢复。现在由 SideLinker 恢复后调用 `SACLockScreenImmediate`（login.framework）锁屏。手动关闭「使用 iPad 单屏显示」时不锁屏
 - 全部依赖 UU 4.38 的日志格式，UU 升级后要先检查这些字段还在不在
 
 ### 随航（Sidecar.swift、App.swift）
@@ -117,7 +116,7 @@ open build/SideLinker.app                     # 运行；再次 open 会弹出�
 - 界面文字要精简：用户明确要求删掉所有说明性的副标题和操作提示，只保留状态信息
 - 菜单栏：第一组只列已建立的连接；随航、远程连接两组未连接时只显示标题，已连接时展开详情。可点的只有「使用 iPad 单屏显示」（远程连接已建立时出现，样式参照控制中心的滑动开关，拨动后菜单保持打开）、「设置…」和「退出 SideLinker」；其他功能放进设置窗口，后续新功能也加在设置窗口侧栏
 - 菜单栏图标用 17pt、中等粗细的 SF Symbol 绘制，和其他菜单栏图标大小一致
-- 功能名称：「使用 iPad 单屏显示」（旧称「iPad 单屏」）；菜单栏状态写成「名称 · 状态」
+- 功能名称：「使用 iPad 单屏显示」；菜单栏状态写成「名称 · 状态」
 - UU 日志不含连入设备的屏幕分辨率和型号，屏幕尺寸由用户在设置里按设备选择（`deviceScreenSizes`），预设列表在 `Settings.swift` 的 `ScreenSize.all`
 - 用户偏好原生实现，可以用私有接口，不依赖 BetterDisplay
 - 写文档类内容后，用户要求按 `lieflat-less-ai-tone` 规则去掉 AI 腔
