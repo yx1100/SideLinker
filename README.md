@@ -2,31 +2,55 @@
 
 **English** | [简体中文](./README.zh-CN.md)
 
-A menu bar app that uses an iPad as the Mac's screen in three situations. The Sidecar situations are detected automatically. UU Remote switches automatically only for devices you mark in the settings window (identified by the device ID in UU's logs); for any other device you trigger it from the menu bar or the settings window:
+A macOS menu bar app that uses an iPad as the Mac's display in three situations.
 
-| Situation | Detected when | What SideLinker does |
+| Situation | Condition | Behavior |
 |---|---|---|
-| Desk Sidecar | The Mac has displays attached | Nothing; use the built-in Sidecar as usual |
-| Portable Sidecar | No display is attached (e.g. a Mac mini on the road) | Connects Sidecar to the iPad at login, making it the only screen |
-| UU Remote | You turn on "使用 iPad 单屏显示" in the menu bar or the settings window after connecting with NetEase UU Remote from the iPad | Creates a virtual display matching the screen size you picked for that device (default 2752×2064, 13-inch iPad Pro; iPad Pro 11-inch, iPad Air and iPad mini sizes are available), turns the physical displays off, and restores them 30 seconds after the session ends |
+| Desk Sidecar | The Mac has a display attached | Does nothing; use the system's Sidecar as usual |
+| Portable Sidecar | No display is attached | Connects Sidecar to the iPad after login, making it the only display |
+| Remote connection | The iPad connects through NetEase UU Remote | Turning on "使用 iPad 单屏显示" disables the physical displays and keeps one virtual display matching the iPad's size; 30 seconds after UU disconnects, the displays are restored and the Mac is locked |
 
-It uses macOS frameworks and private APIs (SidecarCore, CGVirtualDisplay, CGSConfigureDisplayEnabled) and does not need BetterDisplay.
+Built on macOS private frameworks (SidecarCore, CGVirtualDisplay), with no third-party dependencies.
 
 ## Install
 
-Requires macOS 14+ and Xcode or the Command Line Tools.
+Requires macOS 14 or later and Xcode or the Command Line Tools.
 
 ```bash
 ./build.sh install
 ```
 
-Allow notifications on first launch, then enable "登录时启动" (Launch at Login) under General in the settings window and approve it in System Settings → General → Login Items & Extensions.
+The app is installed to `/Applications/SideLinker.app`. Turn on "登录时启动" (Launch at Login) under 通用 (General) in the settings window.
 
-## Notes
+## Usage
 
-- Wireless Sidecar needs Wi-Fi, Bluetooth and Handoff turned on, but no router or internet. Do not turn on the iPad's Personal Hotspot; Apple's Sidecar requirements say the iPad must not share its cellular connection. A USB-C cable is the most reliable option without Wi-Fi.
-- A headless Mac can only start Sidecar after login. With FileVault on, automatic login is unavailable, so either turn FileVault off and enable automatic login, or type the password blind with a keyboard.
-- UU session detection (used to restore the displays after you disconnect) reads UU's log files and was verified with UU 4.38.
-- Turn off UU's "lock after remote session ends" option. macOS refuses display changes while the screen is locked, so SideLinker restores the displays first and then locks the Mac itself. If UU locks first, the displays stay dark until you unlock (blind password entry or Touch ID).
+**Menu bar**
 
-See the [Chinese README](./README.zh-CN.md) for details, debugging commands and known limitations.
+- The top section lists the connections currently established
+- The Sidecar and remote connection sections list devices while connected
+- While a remote connection is active, a switch turns "使用 iPad 单屏显示" on or off
+- "设置…" opens the settings window
+
+**Settings window**
+
+- Sidecar: nearby iPads and their status, the "connect automatically when no display is attached" switch, and notes on wireless Sidecar and headless startup
+- Remote connection: UU status and the "使用 iPad 单屏显示" switch; each device that has connected gets a name, a screen size and an "enable automatically on connect" switch, and can be forgotten
+- General: Launch at Login
+
+## Before you start
+
+- Sidecar requires the Mac and iPad to use the same Apple Account. Wireless Sidecar needs Wi-Fi, Bluetooth and Handoff turned on but no internet, and the iPad's Personal Hotspot must be off; a USB-C cable works for a wired connection
+- Portable Sidecar requires the Mac to log in automatically, which is unavailable while FileVault is on
+- Turn off UU's "lock after remote session ends" option; SideLinker locks the Mac after restoring the displays
+
+## Command line
+
+```bash
+/Applications/SideLinker.app/Contents/MacOS/SideLinker devices
+```
+
+`connect [name]`, `disconnect [name]` and `selftest` are also available.
+
+## Credits
+
+The Sidecar connection method comes from [Ocasio-J/SidecarLauncher](https://github.com/Ocasio-J/SidecarLauncher) and [wberry9813/SideLinker](https://github.com/wberry9813/SideLinker); the virtual display declarations follow [Stengo/DeskPad](https://github.com/Stengo/DeskPad).

@@ -2,15 +2,15 @@
 
 [English](./README.md) | **简体中文**
 
-一个菜单栏小工具，让 iPad 在三种场景下当 Mac 的屏幕：
+macOS 菜单栏工具，让 iPad 在三种场景下作为 Mac 的显示器。
 
-| 场景 | 判定条件 | SideLinker 做什么 |
+| 场景 | 条件 | 行为 |
 |---|---|---|
-| 桌面随航 | Mac 接着显示器 | 不做任何事，照常使用系统自带的随航 |
-| 便携随航 | 没有任何显示器（例如带 Mac mini 出门） | 开机后自动连上 iPad，iPad 是唯一屏幕 |
-| UU 远程 | 记住的 iPad 通过网易 UU 远程连入时自动切换，其他设备连入时在设置窗口里手动切换 | 只保留一块与 iPad 同尺寸的虚拟屏，关闭物理显示器；UU 断开 30 秒后自动恢复 |
+| 桌面随航 | Mac 已连接显示器 | 不做处理，照常使用系统随航 |
+| 便携随航 | Mac 未连接任何显示器 | 登录后自动连接 iPad，iPad 作为唯一显示器 |
+| 远程连接 | iPad 通过网易 UU 远程接入 | 开启「使用 iPad 单屏显示」后停用物理显示器，只保留一块与 iPad 尺寸相同的虚拟显示器；UU 断开 30 秒后恢复显示器并锁屏 |
 
-随航场景自动识别。UU 远程只对你记住的设备自动切换，用电脑或手机连入时不会被切成 4:3 单屏。全部使用 macOS 自带的接口和私有框架（SidecarCore、CGVirtualDisplay、CGSConfigureDisplayEnabled），不依赖 BetterDisplay。
+基于 macOS 私有框架（SidecarCore、CGVirtualDisplay）实现，不依赖第三方软件。
 
 ## 安装
 
@@ -20,89 +20,37 @@
 ./build.sh install
 ```
 
-构建结果复制到 `/Applications/SideLinker.app`。首次运行时允许通知；在设置窗口「通用」里打开「登录时启动」，再按提示到「系统设置 → 通用 → 登录项与扩展」里允许它在后台运行。
+App 安装到 `/Applications/SideLinker.app`。在设置窗口「通用」中开启「登录时启动」。
 
-## 菜单栏与设置窗口
+## 使用
 
-菜单栏图标随状态变化：空闲、正在连接随航、随航已连接、使用 iPad 单屏显示中各用一个图标。
+**菜单栏**
 
-**菜单栏**第一组列出当前已建立的连接（随航、远程连接，两者同时存在时各占一行）。下面的「随航」「远程连接」两组未连接时只显示标题，已连接时列出已连接的 iPad 或接入的设备。远程连接已建立时可以在菜单里直接开启或关闭「使用 iPad 单屏显示」，开启后显示分辨率。其余可点的是「设置…」（⌘,）和「退出 SideLinker」。退出前会恢复被关闭的显示器。
+- 顶部显示当前已建立的连接
+- 「随航」「远程连接」两组在已连接时列出设备
+- 远程连接建立后，可用滑动开关开启或关闭「使用 iPad 单屏显示」
+- 「设置…」打开设置窗口
 
-**设置窗口**左侧是功能列表，右侧是对应设置：
+**设置窗口**
 
-- **随航**：附近的 iPad 及连接状态；「无显示器时自动连接」开关
-- **远程连接**：UU 连接状态；「使用 iPad 单屏显示」开关（UU 连接后可用）；每台连入过的设备一组设置：「接入时自动启用」开关和「屏幕尺寸」
-- **通用**：「登录时启动」开关、版本号
+- 随航：附近的 iPad 及连接状态，「无显示器时自动连接」开关，无线随航条件和无显示器开机准备的说明
+- 远程连接：UU 连接状态和「使用 iPad 单屏显示」开关；每台接入过的设备可以设置名称、屏幕尺寸和「接入时自动启用」，也可以忘记此设备
+- 通用：登录时启动
 
-## 便携随航
+## 使用前准备
 
-**流程**
-
-1. 随航未连接，且除 SideLinker 自己的虚拟屏外没有任何显示器时触发。
-2. 先放一块 1920×1080 的占位虚拟屏（原项目作者发现完全没有屏幕时随航不稳定），再开始连接：上次连上的设备优先，每台先有线后无线。前 2 分钟每 5 秒重试一次，之后每 30 秒一次。
-3. 连上后，占位屏改为 iPad 的镜像，iPad 成为唯一屏幕。
-4. 随航断开后 10 秒自动重连。在 iPad 上或控制中心里断开也会被重连，要真正断开请先关掉设置窗口里的「无显示器时自动连接」。
-5. 接上物理显示器后自动退出这个场景，随航连接保持不变。
-
-**前提**
-
-- Mac 和 iPad 登录同一个 Apple 账户，并开启双重认证。
-- **无线**：两边都打开 Wi-Fi、蓝牙和接力，距离 10 米以内。随航走点对点连接，不需要路由器，也不需要联网。**不要打开 iPad 的个人热点**，Mac 也不要共享网络，否则无线随航连不上（Apple 官方要求）。
-- **有线**：用 USB-C 线直连，iPad 需要信任这台 Mac。户外没有 Wi-Fi 网络时这是最稳的方式，还能给 iPad 充电。
-- **FileVault**：开着 FileVault 时 macOS 不允许自动登录，没接屏幕的 Mac mini 开机会停在解锁界面，进不了系统，也就连不了随航。两个办法：关闭 FileVault，并在「系统设置 → 用户与群组」里开启自动登录；或者接一个键盘，开机后盲输密码。前者在设备丢失时有数据泄露风险，请自行取舍。
-
-## UU 远程
-
-**流程**
-
-1. 用 iPad 通过 UU 连上后，在设置窗口的「远程连接」里打开「使用 iPad 单屏显示」。第一次连上时给这台 iPad 选好「屏幕尺寸」，并打开「接入时自动启用」，以后这台 iPad 连入就会自动开启。设备按 UU 日志 `device_info_changed` 推送里 `participants_info` 的设备 ID 识别，改名不影响；平台为 4 的 Mac 不会出现在列表里。
-2. SideLinker 读取 UU 日志（`~/Library/Application Support/com.netease.uuremote/Logs/`）中的 `onPeerConnectionState`，`state` 为 5 表示已连接，0 表示已断开，每 2 秒检查一次，用来判断什么时候自动恢复。
-3. 开启时：按连入设备选的屏幕尺寸创建一块 HiDPI 虚拟屏（默认 13 英寸 iPad Pro，2752×2064 像素、1376×1032 点；可选 iPad Pro 11 英寸、iPad Air、iPad mini 等），设为主屏，再逐块关闭物理显示器，所有窗口会集中到这块屏上。个别显示器关不掉时改为镜像这块虚拟屏，这些显示器仍会显示画面。
-4. UU 断开满 30 秒后，打开物理显示器，恢复原来的分辨率、排列和主屏，再移除虚拟屏，最后锁屏。30 秒的缓冲用来避免掉线重连时来回切换：UU 日志里出现过断开 22 秒后又连上的情况。缓冲越长，断开后 Mac 处于未锁定状态的时间也越长（屏幕是关着的）。要调整就改 `Sources/SideLinker/App.swift` 里的 `RemoteGate(grace: 30)`。
-
-**UU 设置**
-
-- 关闭 UU 的「结束远程自动锁屏」，锁屏交给 SideLinker。锁屏状态下 macOS 不允许修改显示器配置：如果 UU 在断开时先锁了屏，物理屏要等解锁后才能恢复，回到工位会看到全黑的屏幕，需要盲输密码或用触控 ID 解锁，解锁后几秒内恢复。
-- UU 连入时会修改物理屏的分辨率，断开时因为显示器还关着，它改不回去。SideLinker 会记住连接前持续 10 秒没变的分辨率，恢复时一起设回去。
-
-**安全措施**
-
-- 锁屏时暂停切换，解锁后自动补做。从外面连入时如果 Mac 处于锁屏，先在 UU 里解锁，随后切到单屏。
-- 点「恢复物理显示器」立即退出单屏，不锁屏，本次连接内也不再自动切换。
-- 没有检测到 UU 会话时进入单屏，30 秒后自动恢复，物理屏不会一直关着。
-- App 崩溃后由 launchd 重新拉起，启动后恢复物理显示器。
-- 所有显示配置只在本次登录有效，注销或重启后也会还原。
-
-在 MacBook Pro（M1 Pro，macOS 27.0.1，外接两台显示器）上用 iPad 实测：UU 连上后约 12 秒切换完成（USB-C 便携屏关闭较慢，约 10 秒）；断开后等满缓冲时间开始恢复，约 3 秒后分辨率、排列和主屏都与原来一致，再过约 3 秒锁屏。
+- 随航要求 Mac 和 iPad 登录同一 Apple 账户。无线连接需开启 Wi-Fi、蓝牙和接力，不需要联网，iPad 不能开启个人热点；有线连接使用 USB-C 线
+- 便携随航要求 Mac 开机后自动登录，开启 FileVault 时无法自动登录
+- 远程连接前关闭 UU 的「结束远程自动锁屏」，锁屏由 SideLinker 在恢复显示器后执行
 
 ## 命令行
-
-排查问题时可以直接调用 App 里的可执行文件：
 
 ```bash
 /Applications/SideLinker.app/Contents/MacOS/SideLinker devices
 ```
 
-另外还有 `connect [设备名]`、`disconnect [设备名]` 和 `selftest`（检查日志解析和单屏判定逻辑）。
-
-隐藏设置：
-
-```bash
-# 在接着显示器的 Mac 上模拟便携随航流程
-defaults write com.yx1100.sidelinker debugForcePortable -bool YES
-# 便携随航时不放占位屏
-defaults write com.yx1100.sidelinker noDummy -bool YES
-```
-
-## 已知限制
-
-- 自动识别依赖 UU 的日志格式，在 UU 4.38 上验证。UU 升级后如果失效，先看日志里是否还有 `onPeerConnectionState`，这时 UU 断开后不会自动恢复，需要在设置窗口里点「恢复物理显示器」。
-- 不区分从哪台设备连入，用电脑通过 UU 连进来也会切成 4:3 单屏。用这台 Mac 去控制别的设备时是否会误触发，尚未验证。
-- iPad 尺寸写在 `Sources/SideLinker/App.swift` 的 `enterRemote()` 里，换 iPad 时需要修改。
-- 依赖私有接口，macOS 升级后可能失效。目前在 macOS 27.0.1 上验证。
-- 和 BetterDisplay 同时运行时，请关闭 BetterDisplay 的自动连接、配置保护等功能，避免两边互相修改显示配置。
-- 便携随航的占位屏是否必要，还需要在无屏的 Mac mini 上实测；不需要的话可用 `noDummy` 关掉。
+另有 `connect [设备名]`、`disconnect [设备名]` 和 `selftest`。
 
 ## 致谢
 
-随航连接方式来自 [Ocasio-J/SidecarLauncher](https://github.com/Ocasio-J/SidecarLauncher) 和 [wberry9813/SideLinker](https://github.com/wberry9813/SideLinker)；虚拟屏接口的声明参照了 [Stengo/DeskPad](https://github.com/Stengo/DeskPad)。
+随航连接方式来自 [Ocasio-J/SidecarLauncher](https://github.com/Ocasio-J/SidecarLauncher) 和 [wberry9813/SideLinker](https://github.com/wberry9813/SideLinker)；虚拟显示器接口的声明参照了 [Stengo/DeskPad](https://github.com/Stengo/DeskPad)。
