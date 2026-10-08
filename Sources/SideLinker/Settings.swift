@@ -10,12 +10,12 @@ struct ScreenSize: Hashable, Identifiable {
     var summary: String { "\(name) · \(text)" } // 对应的 iPad 和分辨率
 
     static let all = [
-        ScreenSize(name: "iPad Pro 13 英寸（M4 及后续机型）", width: 2752, height: 2064),
+        ScreenSize(name: "iPad Pro 13 英寸", width: 2752, height: 2064),
         ScreenSize(name: "iPad Pro 12.9 英寸 / iPad Air 13 英寸", width: 2732, height: 2048),
-        ScreenSize(name: "iPad Pro 11 英寸（M4 及后续机型）", width: 2420, height: 1668),
-        ScreenSize(name: "iPad Pro 11 英寸（M2 及更早机型）", width: 2388, height: 1668),
-        ScreenSize(name: "iPad Air 11 英寸 / iPad（第 10 代及后续机型）", width: 2360, height: 1640),
-        ScreenSize(name: "iPad mini（第 6 代及后续机型）", width: 2266, height: 1488),
+        ScreenSize(name: "iPad Pro 11 英寸", width: 2420, height: 1668),
+        ScreenSize(name: "iPad Pro 11 英寸", width: 2388, height: 1668),
+        ScreenSize(name: "iPad Air 11 英寸 / iPad 10.9 英寸", width: 2360, height: 1640),
+        ScreenSize(name: "iPad mini 8.3 英寸", width: 2266, height: 1488),
     ]
     static let standard = all[0]
     static func from(id: String?) -> ScreenSize { all.first { $0.id == id } ?? standard }
