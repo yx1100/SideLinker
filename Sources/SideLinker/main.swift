@@ -35,18 +35,16 @@ default:
     NSApplication.shared.run()
 }
 
-/// 日志解析、远程单屏判定、日志轮转的自检
+/// 会话判定、日志解析、远程单屏判定的自检
 func selftest() -> Int32 {
     var failures = 0
     func check(_ ok: Bool, _ what: String) {
         if !ok { failures += 1; print("✗ \(what)") }
     }
-    let line = { (state: Int) in "[t] XPC Server: {\"onPeerConnectionState\":{\"_0\":{\"handle\":1,\"state\":\(state)}}}\n" }
-
-    check(UUWatcher.state(fromLine: line(5)) == 5, "解析已连接")
-    check(UUWatcher.state(fromLine: #"{"onPeerConnectionState":{"_0":{"state":0,"handle":1}}}"#) == 0, "键顺序不同也能解析")
-    check(UUWatcher.state(fromLine: #"{"onRoomState":{"_0":{"handle":1,"state":1,"error_code":9000}}}"#) == nil, "忽略 onRoomState")
-    check(UUWatcher.state(fromLine: #"{"heartbeat":{"timestamp":1}}"#) == nil, "忽略心跳")
+    let t0 = Date()
+    check(UUWatcher.sessionActive(modified: t0 - 5, now: t0), "串流日志刚写过，会话中")
+    check(!UUWatcher.sessionActive(modified: t0 - 20, now: t0), "串流日志 20 秒没写，已断开")
+    check(!UUWatcher.sessionActive(modified: nil, now: t0), "没有串流日志，已断开")
     let push = #"[t] 被控-收到推送数据-{"data":{"device_id":"mac1","participants_info":[{"alias":"iPad","device_id":"pad1","platform":3},{"alias":"MacBook","device_id":"mac2","platform":4}],"platform":4},"type":"device_info_changed"}"#
     let parsed = UUWatcher.participants(fromLine: push)
     check(parsed?.host == "mac1" && parsed?.controllers == ["pad1": "iPad"], "解析连入设备并排除 Mac")
@@ -69,30 +67,17 @@ func selftest() -> Int32 {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("sidelinker-selftest-\(getpid())")
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
-    func append(_ name: String, _ text: String) {
-        let url = dir.appendingPathComponent(name)
-        if let handle = try? FileHandle(forWritingTo: url) {
-            handle.seekToEndOfFile()
-            handle.write(Data(text.utf8))
-            try? handle.close()
-        } else {
-            try? Data(text.utf8).write(to: url)
-        }
-    }
-    let first = "UURemoteMac_2026-01-01_00:00:00.log"
-    append(first, line(5) + "[t] XPC Server: {\"heartbeat\":{}}\n")
-    let watcher = UUWatcher(dir: dir)
+    let slog = dir.appendingPathComponent("streamer_log_controlled.slog")
+    let watcher = UUWatcher(dir: dir, streamerLog: slog)
     watcher.start(interval: 3600)
-    check(watcher.connected, "启动时读到已连接")
-    append(first, String(line(0).dropLast()))
     watcher.poll()
-    check(watcher.connected, "没写完的行先不处理")
-    append(first, "\n")
+    check(!watcher.connected, "启动时没有串流日志")
+    try? Data([1]).write(to: slog)
     watcher.poll()
-    check(!watcher.connected, "行写完后读到断开")
-    append("UURemoteMac_2026-01-02_00:00:00.log", line(5))
+    check(watcher.connected, "串流日志写入后识别为已连接")
+    try? FileManager.default.setAttributes([.modificationDate: Date() - 60], ofItemAtPath: slog.path)
     watcher.poll()
-    check(watcher.connected, "切换到新的日志文件")
+    check(!watcher.connected, "串流日志停写后识别为断开")
 
     print(failures == 0 ? "selftest 全部通过" : "selftest 失败 \(failures) 项")
     return failures == 0 ? 0 : 1

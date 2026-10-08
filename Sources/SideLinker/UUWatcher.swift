@@ -1,8 +1,9 @@
 import Foundation
 
-/// 从 UU 远程的日志判断有没有被控会话：onPeerConnectionState 的 state 为 5 表示已连接，0 表示断开。
-/// 连入的设备取自 device_info_changed 推送里的 participants_info（设备 ID、名称、平台）。
-/// 依赖 UU 4.38 的日志格式；UU 升级后自动识别失效时，先看日志里是否还有这些字段。
+/// 判断 UU 远程有没有被控会话：被控端的串流日志 streamer_log_controlled.slog 只在会话期间持续写入
+/// （实测每 3～8 秒一次，空闲时不动），内容加密，只看修改时间。
+/// 连入的设备取自明文日志里 device_info_changed 推送的 participants_info（设备 ID、名称、平台）。
+/// UU 4.42 起明文日志改为加密格式，此后无法识别连入的是哪台设备。
 final class UUWatcher {
     private(set) var connected = false
     private var participants: [String: [String: String]] = [:] // 被控设备 ID → [连入设备 ID: 名称]
@@ -12,18 +13,22 @@ final class UUWatcher {
     private(set) var known: [String: (name: String, platform: Int)] = [:]
     var onPoll: (() -> Void)?
     private let dir: URL
+    private let streamerLog: URL
     private var file: URL?
     private var offset: UInt64 = 0
     private var timer: Timer?
 
     init(dir: URL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/com.netease.uuremote/Logs")) {
+            .appendingPathComponent("Library/Application Support/com.netease.uuremote/Logs"),
+         streamerLog: URL = URL(fileURLWithPath: "/Users/Shared/UURemote/\(getuid())/com.netease.uuremote.server/Logs/Streamer/streamer_log_controlled.slog")) {
         self.dir = dir
+        self.streamerLog = streamerLog
     }
 
-    static func state<S: StringProtocol>(fromLine line: S) -> Int? {
-        guard line.contains("\"onPeerConnectionState\""), let key = line.range(of: "\"state\":") else { return nil }
-        return Int(String(line[key.upperBound...].prefix(while: \.isNumber)))
+    /// 串流日志 15 秒内写过就算会话中
+    static func sessionActive(modified: Date?, now: Date) -> Bool {
+        guard let modified else { return false }
+        return now.timeIntervalSince(modified) < 15
     }
 
     /// 解析 device_info_changed 推送，返回被控设备 ID 和连入设备（排除平台 4，即 macOS）
@@ -50,28 +55,18 @@ final class UUWatcher {
                 if let push = Self.participants(fromLine: line) { remember(push) }
             }
         }
-        // 启动时从新到旧找最后一条状态
-        let files = logFiles()
-        file = files.last
-        for url in files.reversed() {
-            let result = read(url, from: 0, trackParticipants: url == file) // 旧文件里的连入设备已过时
-            if url == file { offset = result.end }
-            if let state = result.state { connected = state == 5; break }
-        }
+        file = logFiles().last
+        offset = (try? FileManager.default.attributesOfItem(atPath: file?.path ?? "")[.size] as? UInt64) ?? 0 // 只跟踪之后的推送
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in self?.poll() }
     }
 
     func poll() {
         if let newest = logFiles().last, newest != file { file = newest; offset = 0 } // 日志按天换新文件
-        if let file {
-            let result = read(file, from: offset)
-            offset = result.end
-            if let state = result.state {
-                connected = state == 5
-                // 断开时清掉连入设备：device_info_changed 只在会话期间推送，被控离线后旧记录会残留
-                if !connected { participants = [:] }
-            }
-        }
+        if let file { offset = read(file, from: offset) }
+        let modified = (try? FileManager.default.attributesOfItem(atPath: streamerLog.path))?[.modificationDate] as? Date
+        connected = Self.sessionActive(modified: modified, now: Date())
+        // 断开时清掉连入设备：device_info_changed 只在会话期间推送，被控离线后旧记录会残留
+        if !connected { participants = [:] }
         onPoll?()
     }
 
@@ -85,23 +80,21 @@ final class UUWatcher {
         return names.filter { $0.hasPrefix("UURemoteMac_") && $0.hasSuffix(".log") }.sorted().map { dir.appendingPathComponent($0) }
     }
 
-    /// 读 offset 之后的完整行，更新连入设备，返回最后一条状态和下次的起点；没写完的末行留到下次
-    private func read(_ url: URL, from offset: UInt64, trackParticipants: Bool = true) -> (state: Int?, end: UInt64) {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return (nil, offset) }
+    /// 读 offset 之后的完整行，更新连入设备，返回下次的起点；没写完的末行留到下次
+    private func read(_ url: URL, from offset: UInt64) -> UInt64 {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return offset }
         defer { try? handle.close() }
         try? handle.seek(toOffset: offset)
         let data = (try? handle.readToEnd()) ?? Data()
-        guard let lastNewline = data.lastIndex(of: UInt8(ascii: "\n")) else { return (nil, offset) }
+        guard let lastNewline = data.lastIndex(of: UInt8(ascii: "\n")) else { return offset }
         let text = String(decoding: data[..<lastNewline], as: UTF8.self)
-        let lines = text.split(separator: "\n")
-        for line in lines where trackParticipants && line.contains("device_info_changed") {
+        for line in text.split(separator: "\n") where line.contains("device_info_changed") {
             if let push = Self.participants(fromLine: line) {
                 participants[push.host] = push.controllers
                 remember(push)
             }
         }
-        let state = lines.reversed().lazy.compactMap { Self.state(fromLine: $0) }.first
-        return (state, offset + UInt64(lastNewline - data.startIndex + 1))
+        return offset + UInt64(lastNewline - data.startIndex + 1)
     }
 }
 

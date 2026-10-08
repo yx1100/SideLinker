@@ -77,12 +77,12 @@ build.sh                              swift build → build/SideLinker.app → a
 ### UU 远程（UUWatcher.swift、App.swift）
 
 - 日志目录：`~/Library/Application Support/com.netease.uuremote/Logs/UURemoteMac_*.log`，按天换新文件，按文件名排序就是按时间排序
-- 会话状态：`"onPeerConnectionState"` 行里 `state` 为 5 表示连上，0 表示断开
-- 连入设备：`device_info_changed` 推送里的 `participants_info`，含 `alias`、`device_id`、`platform`。平台编号是推断的：1 Windows，3 iOS/iPadOS，4 macOS（解析时排除 4）。**UU 不提供设备型号**
+- 会话状态：看 `/Users/Shared/UURemote/<uid>/com.netease.uuremote.server/Logs/Streamer/streamer_log_controlled.slog` 的修改时间，15 秒内写过算会话中。这个文件内容加密，只在被控会话期间每 3～8 秒写一次，空闲时不动（2026-10-08 在 UU 4.42 上实测）
+- 连入设备：明文日志里 `device_info_changed` 推送里的 `participants_info`，含 `alias`、`device_id`、`platform`。平台编号是推断的：1 Windows，3 iOS/iPadOS，4 macOS（解析时排除 4）。**UU 不提供设备型号**
 - 设备名称只出现在设备连入时写的日志里。App 启动时扫全部日志建立 `known` 表，记住的设备名称以最新一条为准
 - `RemoteGate`：只能手动进入或由记住的设备触发；断开满 30 秒才退出（日志里见过断开 22 秒后又连上）；没有会话时进入，30 秒后自动退出
 - **要求用户关闭 UU 的「结束远程自动锁屏」**：否则 UU 先锁屏，物理屏要等解锁后才能恢复。现在由 SideLinker 恢复后调用 `SACLockScreenImmediate`（login.framework）锁屏。手动关闭「使用 iPad 单屏显示」时不锁屏
-- 全部依赖 UU 4.38 的日志格式，UU 升级后要先检查这些字段还在不在
+- UU 4.42 起明文日志改为加密格式（Mars xlog，`LogCache/*.mmap3`），读不到连入设备，按设备自动启用单屏随之失效，只能手动开启。设备名称来自升级前的旧日志
 
 ### 随航（Sidecar.swift、App.swift）
 
