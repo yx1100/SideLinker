@@ -54,7 +54,7 @@ Sources/SideLinker/
   Settings.swift   SettingsModel（ObservableObject）+ SettingsView（SwiftUI）
 Resources/Info.plist                  LSUIElement，Bundle ID com.yx1100.sidelinker
 Resources/com.yx1100.sidelinker.plist LaunchAgent，KeepAlive{SuccessfulExit=false}
-build.sh                              swift build → build/SideLinker.app → ad-hoc 签名；install 参数复制到 /Applications
+build.sh                              swift build → build/SideLinker.app → ad-hoc 签名；install 参数：结束旧进程并等它退出（单屏开启时要先恢复显示器），复制到 /Applications，登录项已注册时用 `launchctl kickstart` 启动，保证在 launchd 守护下运行
 ```
 
 ## 4. 关键机制和已踩过的坑
@@ -101,6 +101,9 @@ open build/SideLinker.app                     # 运行；再次 open 会弹出�
 
 - 编辑器里的 SourceKit 报错（找不到 `CGPrivate` 模块、找不到其他文件里的类型）是误报，以 `swift build` 的结果为准
 - 截图设置窗口：用 `CGWindowListCopyWindowInfo` 找到 SideLinker 的窗口 ID，再 `screencapture -x -o -l <ID>`。computer-use 找不到这个 App（不在应用索引里）
+- 运行日志：`~/Library/Logs/SideLinker.log`（`Log.write`），超过 1 MB 轮换为 `SideLinker.old.log`
+- 紧急恢复快捷键 ⌃⌥⌘R（Carbon `RegisterEventHotKey`，无需辅助功能权限），效果同手动关闭单屏
+- 单屏开启时不要重装或重启 App：退出时会恢复物理显示器，用户正在远程的单屏会被关掉
 - **任何会关掉屏幕的测试，必须先征得用户同意**，并在后台挂一个安全网：未锁屏、没有 SideLinker 虚拟屏（vendor 0x5344）、物理屏缺失超过 25 秒时，逐块调用 `CGSConfigureDisplayEnabled(true)` 打开。锁屏状态下只能等用户解锁（触控 ID 或盲输密码）后再打开
 - 用户这台 MacBook 的显示器：Kuycon P27U（ID 3，5K，looks like 2560×1440，主屏，原点 0,0）、内建屏（ID 1，1800×1169，原点 -2646,522）、CFORCE 竖屏便携屏（ID 2，846×1504，原点 -846,0）
 

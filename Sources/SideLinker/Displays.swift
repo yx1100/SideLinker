@@ -129,7 +129,7 @@ enum Displays {
             }
             if modesMatch { break }
         }
-        if !modesMatch { NSLog("SideLinker: 有显示器的分辨率未能还原") }
+        if !modesMatch { Log.write("有显示器的分辨率未能还原") }
         UserDefaults.standard.removeObject(forKey: savedKey)
         return true
     }
@@ -157,7 +157,7 @@ enum Displays {
         guard CGBeginDisplayConfiguration(&config) == .success, let config else { return }
         body(config)
         let error = CGCompleteDisplayConfiguration(config, .forSession) // 只在本次登录有效，注销或重启即还原
-        if error != .success { NSLog("SideLinker: 显示配置失败 %d", error.rawValue) }
+        if error != .success { Log.write("显示配置失败：\(error.rawValue)") }
     }
 
     private static func list(_ get: (UInt32, UnsafeMutablePointer<CGDirectDisplayID>?, UnsafeMutablePointer<UInt32>?) -> CGError) -> [CGDirectDisplayID] {

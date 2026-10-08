@@ -23,7 +23,7 @@ struct ScreenSize: Hashable, Identifiable {
 
 /// 设置窗口显示的状态快照和操作。逻辑在 AppDelegate，状态变化时由它写入
 final class SettingsModel: ObservableObject {
-    struct Device: Identifiable {
+    struct Device: Identifiable, Equatable {
         let id: String
         let name: String
         let connected: Bool
@@ -32,6 +32,7 @@ final class SettingsModel: ObservableObject {
     @Published var sidecarDevices: [Device] = []
     @Published var autoConnect = true
     @Published var uuConnected = false
+    @Published var uuDetectable = true
     @Published var remoteActive = false
     @Published var activeSize: ScreenSize? // 使用 iPad 单屏显示时虚拟屏的尺寸
     @Published var busy = false
@@ -159,7 +160,7 @@ struct SettingsView: View {
     @ViewBuilder private var remote: some View {
         Section("状态") {
             LabeledContent("UU 远程连接") {
-                status(model.uuConnected, on: "已连接", off: "未连接")
+                status(model.uuConnected, on: "已连接", off: model.uuDetectable ? "未连接" : "无法检测")
             }
         }
         // 先选屏幕尺寸，再开启单屏；开启期间尺寸不可修改
@@ -176,6 +177,7 @@ struct SettingsView: View {
                      ?? "停用其他显示器，仅保留一块 \(model.screenSize.text) 的虚拟显示器")
             }
             .disabled(model.busy || !(model.uuConnected || model.remoteActive))
+            LabeledContent("紧急恢复物理显示器", value: AppDelegate.restoreShortcut)
         }
     }
 

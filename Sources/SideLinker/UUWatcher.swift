@@ -5,6 +5,7 @@ import Foundation
 /// UU 4.42 起日志全部加密，无法识别连入的是哪台设备。
 final class UUWatcher {
     private(set) var connected = false
+    private(set) var detectable = false // 串流日志不存在：UU 未安装，或日志位置变了
     var onPoll: (() -> Void)?
     private let streamerLog: URL
     private var timer: Timer?
@@ -25,6 +26,7 @@ final class UUWatcher {
 
     func poll() {
         let modified = (try? FileManager.default.attributesOfItem(atPath: streamerLog.path))?[.modificationDate] as? Date
+        detectable = modified != nil
         connected = Self.sessionActive(modified: modified, now: Date())
         onPoll?()
     }

@@ -20,7 +20,7 @@ Requires macOS 14 or later and Xcode or the Command Line Tools.
 ./build.sh install
 ```
 
-The app is installed to `/Applications/SideLinker.app`. Turn on "登录时启动" (Launch at Login) under 通用 (General) in the settings window.
+The app is installed to `/Applications/SideLinker.app` and started. Turn on "登录时启动" (Launch at Login) under 通用 (General) in the settings window; launchd then starts the app and relaunches it after a crash, which restores the displays.
 
 ## Usage
 
@@ -34,7 +34,7 @@ The app is installed to `/Applications/SideLinker.app`. Turn on "登录时启动
 **Settings window**
 
 - Sidecar: nearby iPads and their status, the "connect automatically when no display is attached" switch, and notes on wireless Sidecar and headless startup
-- Remote connection: UU status; choose the screen size of the virtual display, then turn on "使用 iPad 单屏显示"
+- Remote connection: UU status; choose the screen size of the virtual display, then turn on "使用 iPad 单屏显示". The status reads "无法检测" (cannot detect) when UU's session log is missing
 - General: Launch at Login
 
 ## Before you start
@@ -42,6 +42,11 @@ The app is installed to `/Applications/SideLinker.app`. Turn on "登录时启动
 - Sidecar requires the Mac and iPad to use the same Apple Account. Wireless Sidecar needs Wi-Fi, Bluetooth and Handoff turned on but no internet, and the iPad's Personal Hotspot must be off; a USB-C cable works for a wired connection
 - Portable Sidecar requires the Mac to log in automatically, which is unavailable while FileVault is on
 - Turn off UU's "lock after remote session ends" option; SideLinker locks the Mac after restoring the displays
+
+## Emergency restore and log
+
+- While single-screen mode is on, press ⌃⌥⌘R at the Mac to restore the physical displays without looking at the screen
+- The log at `~/Library/Logs/SideLinker.log` records UU connections, single-screen changes, locking and display configuration errors; open it in Console
 
 ## Command line
 

@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 import ServiceManagement
 import UserNotifications
@@ -34,6 +35,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let model = SettingsModel()
     private var settingsWindow: NSWindow?
     private var previousApp: NSRunningApplication? // 打开菜单前处于前台的 App
+    private var lastUUConnected = false // 只在状态变化时写日志
+    private var hotKey: EventHotKeyRef?
+    static let restoreShortcut = "⌃⌥⌘R"
 
     /// 虚拟屏的尺寸，在设置窗口里选
     private var screenSize: ScreenSize {
@@ -51,7 +55,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let id = Bundle.main.bundleIdentifier, NSRunningApplication.runningApplications(withBundleIdentifier: id).count > 1 {
             exit(0)
         }
+        Log.write("启动")
         bindModel()
+        registerRestoreShortcut()
         refreshIcon()
         let menu = NSMenu()
         menu.delegate = self
@@ -66,7 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sigterm?.setEventHandler { NSApp.terminate(nil) }
         sigterm?.resume()
 
-        // 上次异常退出时物理屏可能还关着：remoteApplied 为真，tickRemote 会按当前 UU 状态恢复或重新进入
+        // 上次异常退出时物理屏可能还关着：remoteApplied 为真，tickRemote 会恢复物理屏
         uu.onPoll = { [weak self] in self?.tickRemote() }
         uu.start()
         Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
@@ -83,6 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        Log.write("退出")
         var screen = remoteScreen
         remoteScreen = nil
         work.sync {
@@ -104,7 +111,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 stableModes = modes
             }
         }
-        _ = gate.update(session: uu.connected, now: Date())
+        if uu.connected != lastUUConnected {
+            lastUUConnected = uu.connected
+            Log.write(uu.connected ? "UU 远程已连接" : "UU 远程已断开")
+        }
+        if gate.update(session: uu.connected, now: Date()) { Log.write("UU 断开满 \(Int(gate.grace)) 秒，关闭单屏显示") }
         if gate.active && uu.connected { lockAfterRestore = true }
         let locked = Session.isLocked
         if locked && !gate.active { lockAfterRestore = false } // 已被锁过（如 UU 自动锁屏），解锁后不再重复锁
@@ -123,19 +134,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let screen = VirtualScreen(name: "SideLinker iPad", width: UInt32(size.width), height: UInt32(size.height),
                                          ppi: 264, productID: 1) else {
             gate.exit()
+            Log.write("虚拟显示器创建失败")
             notify("虚拟显示器创建失败")
             return
         }
         remoteScreen = screen
         activeSize = size
         busy = true
+        Log.write("开启单屏显示：\(size.summary)")
         let modes = stableModes
         work.async {
             let allOff = Displays.enterSingleScreen(screen, modes: modes)
             DispatchQueue.main.async {
                 self.busy = false
                 self.refreshIcon()
-                if !allOff { self.notify("部分显示器无法停用，已改为镜像显示") }
+                if !allOff {
+                    Log.write("部分显示器无法停用，已改为镜像显示")
+                    self.notify("部分显示器无法停用，已改为镜像显示")
+                }
             }
         }
     }
@@ -149,12 +165,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.async {
                 self.busy = false
                 guard restored else {
+                    Log.write("恢复物理显示器时处于锁屏，解锁后重试")
                     self.remoteScreen = screen // 恢复途中被锁屏：留着虚拟屏，解锁后重试
                     return
                 }
+                Log.write("已恢复物理显示器")
                 self.activeSize = nil
                 self.refreshIcon()
-                if self.lockAfterRestore { Session.lock() }
+                if self.lockAfterRestore {
+                    Log.write("锁屏")
+                    Session.lock()
+                }
                 self.lockAfterRestore = false
             }
         }
@@ -230,6 +251,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.connecting = false
                 // 前 2 分钟每 5 秒重试，之后每 30 秒
                 self.nextAttempt = Date() + (Date().timeIntervalSince(self.portableSince) < 120 ? 5 : 30)
+                Log.write(connected.map { "随航已连接：\(Sidecar.name($0))" } ?? "随航连接失败，稍后重试")
                 if let connected {
                     self.defaults.set(Sidecar.identifier(connected), forKey: "preferredDevice")
                     self.notify("随航已连接：\(Sidecar.name(connected))")
@@ -293,7 +315,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for device in sidecar { menu.addItem(info(device.name, symbol: "ipad.landscape.badge.play")) }
 
         menu.addItem(.separator())
-        menu.addItem(.sectionHeader(title: uu.connected ? "远程连接 · 已连接" : "远程连接 · 未连接"))
+        menu.addItem(.sectionHeader(title: "远程连接 · " + (uu.connected ? "已连接" : uu.detectable ? "未连接" : "无法检测")))
         // 与设置窗口中的开关条件一致：UU 已连接，或单屏仍在开启中时可以操作
         if uu.connected || gate.active {
             let toggle = NSMenuItem()
@@ -363,16 +385,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func publish() {
         // SidecarCore 每次调用 devices/connectedDevices 可能返回新对象实例，不能用引用比较，用 identifier 匹配
         let connectedIDs = Set(Sidecar.connected().map { Sidecar.identifier($0) })
-        model.sidecarDevices = Sidecar.devices().map {
+        // 只在值变化时赋值：每次赋值都会让设置窗口整页重新布局
+        update(\.sidecarDevices, Sidecar.devices().map {
             .init(id: Sidecar.identifier($0), name: Sidecar.name($0), connected: connectedIDs.contains(Sidecar.identifier($0)))
-        }
-        model.autoConnect = autoEnabled
-        model.uuConnected = uu.connected
-        model.remoteActive = gate.active
-        model.activeSize = activeSize
-        model.busy = busy || (remoteApplied && !gate.active)
-        model.screenSize = screenSize
-        model.launchAtLogin = agent.status == .enabled
+        })
+        update(\.autoConnect, autoEnabled)
+        update(\.uuConnected, uu.connected)
+        update(\.uuDetectable, uu.detectable)
+        update(\.remoteActive, gate.active)
+        update(\.activeSize, activeSize)
+        update(\.busy, busy || (remoteApplied && !gate.active))
+        update(\.screenSize, screenSize)
+        update(\.launchAtLogin, agent.status == .enabled)
+    }
+
+    private func update<T: Equatable>(_ key: ReferenceWritableKeyPath<SettingsModel, T>, _ value: T) {
+        if model[keyPath: key] != value { model[keyPath: key] = value }
+    }
+
+    /// 全局快捷键 ⌃⌥⌘R：单屏开启时物理屏全关、菜单栏在看不见的虚拟屏上，在 Mac 前可以盲按恢复。
+    /// Carbon 热键不需要辅助功能权限
+    private func registerRestoreShortcut() {
+        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        InstallEventHandler(GetApplicationEventTarget(), { _, _, context in
+            guard let context else { return noErr }
+            let app = Unmanaged<AppDelegate>.fromOpaque(context).takeUnretainedValue()
+            DispatchQueue.main.async { app.emergencyRestore() }
+            return noErr
+        }, 1, &spec, Unmanaged.passUnretained(self).toOpaque(), nil)
+        let id = EventHotKeyID(signature: OSType(0x534C_4E4B), id: 1) // 'SLNK'
+        let status = RegisterEventHotKey(UInt32(kVK_ANSI_R), UInt32(controlKey | optionKey | cmdKey), id,
+                                         GetApplicationEventTarget(), 0, &hotKey)
+        if status != noErr { Log.write("紧急恢复快捷键注册失败：\(status)") }
+    }
+
+    private func emergencyRestore() {
+        Log.write("按下紧急恢复快捷键")
+        guard gate.active || remoteApplied else { return }
+        gate.exit()
+        lockAfterRestore = false
+        tickRemote() // 正在切换时由下一次轮询执行恢复
+        refreshIcon()
+        publish()
     }
 
     private func bindModel() {
@@ -385,6 +439,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.toggleRemote = { [weak self] in
             guard let self else { return }
             if gate.active {
+                Log.write("手动关闭单屏显示")
                 gate.exit()
                 lockAfterRestore = false
             } else {
@@ -462,4 +517,33 @@ private final class SwitchRow: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+}
+
+/// 运行日志：~/Library/Logs/SideLinker.log，可在「控制台」App 中查看。超过 1 MB 时改名为 SideLinker.old.log 重新开始
+enum Log {
+    private static let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/SideLinker.log")
+    private static let formatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter
+    }()
+
+    static func write(_ text: String) {
+        let line = "\(formatter.string(from: Date())) \(text)\n"
+        DispatchQueue.main.async { // 后台队列也会调用，统一到主线程写，避免交错
+            let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int ?? 0
+            if size > 1_000_000 {
+                let old = url.deletingLastPathComponent().appendingPathComponent("SideLinker.old.log")
+                try? FileManager.default.removeItem(at: old)
+                try? FileManager.default.moveItem(at: url, to: old)
+            }
+            guard let handle = try? FileHandle(forWritingTo: url) else {
+                try? Data(line.utf8).write(to: url)
+                return
+            }
+            handle.seekToEndOfFile()
+            handle.write(Data(line.utf8))
+            try? handle.close()
+        }
+    }
 }
