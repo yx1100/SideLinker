@@ -10,9 +10,9 @@
 |---|---|---|
 | 桌面随航 | Mac 接着 1–2 台显示器 | 不做任何事，用户用控制中心自己开随航 |
 | 便携随航 | 开机时没有物理显示器（带 Mac mini 出门） | 自动连接 iPad 随航，iPad 是唯一屏幕 |
-| UU 远程 | 用户在外面用 iPad 上的网易 UU 远程连入工位的 Mac | 按设备选的屏幕尺寸（默认 2752×2064）创建 HiDPI 虚拟屏作为唯一屏幕，关闭所有物理显示器，iPad 画面铺满；UU 断开 30 秒后恢复物理屏并锁屏 |
+| UU 远程 | 用户在外面用 iPad 上的网易 UU 远程连入工位的 Mac | 按设置里选的屏幕尺寸（默认 2752×2064）创建 HiDPI 虚拟屏作为唯一屏幕，关闭所有物理显示器，iPad 画面铺满；UU 断开 30 秒后恢复物理屏并锁屏 |
 
-UU 远程的单屏切换：记住的设备（按 UU 设备 ID）连入时自动切换，其他设备连入时只能在设置窗口手动切换。用户明确不要「任何设备连入都自动切换」。
+UU 远程的单屏切换只能手动开启（菜单栏或设置窗口）。用户明确不要「任何设备连入都自动切换」；UU 4.42 起无法识别连入的是哪台设备，原来按设备自动切换的功能已删除。
 
 最初 fork 自 `wberry9813/SideLinker`（上游 `Ocasio-J/SidecarLauncher`），原项目只是一个命令行工具，没有界面。
 
@@ -31,8 +31,7 @@ UU 远程的单屏切换：记住的设备（按 UU 设备 ID）连入时自动�
 ### 已实现但未实测
 
 - **便携随航整条链路**：用户还没有 Mac mini。占位虚拟屏、自动重连、镜像这些逻辑只在代码层面写好，没有在无屏开机的机器上跑过
-- **UU 设备记忆后的自动切换**：解析已用真实日志验证，但「勾选后断开再连入自动切换」没有端到端测过
-- **需要点击才能看到的界面**：菜单栏滑动开关与上方各行的对齐、设备名称编辑、使用须知的展开、「忘记此设备」的确认提示。编译通过，没有截图确认
+- **需要点击才能看到的界面**：菜单栏滑动开关与上方各行的对齐、使用须知的展开。编译通过，没有截图确认
 - **登录时启动**（`SMAppService.agent`）：没有在 `/Applications` 安装版上注册测试过
 
 ### 待办
@@ -50,7 +49,7 @@ Sources/SideLinker/
   main.swift       命令行入口：devices / connect [名称] / disconnect [名称] / selftest；无参数时启动 App
   Sidecar.swift    SidecarCore 私有框架封装（dlopen + NSClassFromString）
   Displays.swift   VirtualScreen、Session（锁屏检测、锁屏）、Displays（单屏进入/恢复、镜像、分辨率）
-  UUWatcher.swift  读 UU 日志：会话状态、连入设备；RemoteGate（单屏退出判定）
+  UUWatcher.swift  按 UU 被控端日志的写入时间判断会话；RemoteGate（单屏退出判定）
   App.swift        AppDelegate：状态机、菜单栏、设置窗口、通知、登录启动
   Settings.swift   SettingsModel（ObservableObject）+ SettingsView（SwiftUI）
 Resources/Info.plist                  LSUIElement，Bundle ID com.yx1100.sidelinker
@@ -78,11 +77,9 @@ build.sh                              swift build → build/SideLinker.app → a
 
 - 日志目录：`~/Library/Application Support/com.netease.uuremote/Logs/UURemoteMac_*.log`，按天换新文件，按文件名排序就是按时间排序
 - 会话状态：看 `/Users/Shared/UURemote/<uid>/com.netease.uuremote.server/Logs/Streamer/streamer_log_controlled.slog` 的修改时间，15 秒内写过算会话中。这个文件内容加密，只在被控会话期间每 3～8 秒写一次，空闲时不动（2026-10-08 在 UU 4.42 上实测）
-- 连入设备：明文日志里 `device_info_changed` 推送里的 `participants_info`，含 `alias`、`device_id`、`platform`。平台编号是推断的：1 Windows，3 iOS/iPadOS，4 macOS（解析时排除 4）。**UU 不提供设备型号**
-- 设备名称只出现在设备连入时写的日志里。App 启动时扫全部日志建立 `known` 表，记住的设备名称以最新一条为准
-- `RemoteGate`：只能手动进入或由记住的设备触发；断开满 30 秒才退出（日志里见过断开 22 秒后又连上）；没有会话时进入，30 秒后自动退出
+- `RemoteGate`：只能手动进入；断开满 30 秒才退出（日志里见过断开 22 秒后又连上）；没有会话时进入，30 秒后自动退出
 - **要求用户关闭 UU 的「结束远程自动锁屏」**：否则 UU 先锁屏，物理屏要等解锁后才能恢复。现在由 SideLinker 恢复后调用 `SACLockScreenImmediate`（login.framework）锁屏。手动关闭「使用 iPad 单屏显示」时不锁屏
-- UU 4.42 起明文日志改为加密格式（Mars xlog，`LogCache/*.mmap3`），读不到连入设备，按设备自动启用单屏随之失效，只能手动开启。设备名称来自升级前的旧日志
+- UU 4.42 起明文日志改为加密格式（Mars xlog，`LogCache/*.mmap3`），读不到连入设备。4.38 及之前可以从明文日志的 `device_info_changed` 推送读到设备 ID 和名称，相关代码已删除，需要时可从 git 历史找回
 
 ### 随航（Sidecar.swift、App.swift）
 
@@ -117,6 +114,6 @@ open build/SideLinker.app                     # 运行；再次 open 会弹出�
 - 菜单栏：第一组只列已建立的连接；随航、远程连接两组未连接时只显示标题，已连接时展开详情。可点的只有「使用 iPad 单屏显示」（远程连接已建立时出现，样式参照控制中心的滑动开关，拨动后菜单保持打开）、「设置…」和「退出 SideLinker」；其他功能放进设置窗口，后续新功能也加在设置窗口侧栏
 - 菜单栏图标用 17pt、中等粗细的 SF Symbol 绘制，和其他菜单栏图标大小一致
 - 功能名称：「使用 iPad 单屏显示」；菜单栏状态写成「名称 · 状态」
-- UU 日志不含连入设备的屏幕分辨率和型号，屏幕尺寸由用户在设置里按设备选择（`deviceScreenSizes`），预设列表在 `Settings.swift` 的 `ScreenSize.all`
+- UU 日志不含连入设备的屏幕分辨率和型号，屏幕尺寸由用户在设置里选择（UserDefaults 键 `screenSize`），预设列表在 `Settings.swift` 的 `ScreenSize.all`
 - 用户偏好原生实现，可以用私有接口，不依赖 BetterDisplay
 - 写文档类内容后，用户要求按 `lieflat-less-ai-tone` 规则去掉 AI 腔

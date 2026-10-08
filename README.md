@@ -34,7 +34,7 @@ The app is installed to `/Applications/SideLinker.app`. Turn on "登录时启动
 **Settings window**
 
 - Sidecar: nearby iPads and their status, the "connect automatically when no display is attached" switch, and notes on wireless Sidecar and headless startup
-- Remote connection: UU status and the "使用 iPad 单屏显示" switch; each device that has connected gets a name, a screen size and an "enable automatically on connect" switch, and can be forgotten
+- Remote connection: UU status and the "使用 iPad 单屏显示" switch; and the screen size of the virtual display
 - General: Launch at Login
 
 ## Before you start

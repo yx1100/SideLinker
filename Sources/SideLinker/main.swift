@@ -35,7 +35,7 @@ default:
     NSApplication.shared.run()
 }
 
-/// 会话判定、日志解析、远程单屏判定的自检
+/// 会话判定、远程单屏判定的自检
 func selftest() -> Int32 {
     var failures = 0
     func check(_ ok: Bool, _ what: String) {
@@ -45,10 +45,6 @@ func selftest() -> Int32 {
     check(UUWatcher.sessionActive(modified: t0 - 5, now: t0), "串流日志刚写过，会话中")
     check(!UUWatcher.sessionActive(modified: t0 - 20, now: t0), "串流日志 20 秒没写，已断开")
     check(!UUWatcher.sessionActive(modified: nil, now: t0), "没有串流日志，已断开")
-    let push = #"[t] 被控-收到推送数据-{"data":{"device_id":"mac1","participants_info":[{"alias":"iPad","device_id":"pad1","platform":3},{"alias":"MacBook","device_id":"mac2","platform":4}],"platform":4},"type":"device_info_changed"}"#
-    let parsed = UUWatcher.participants(fromLine: push)
-    check(parsed?.host == "mac1" && parsed?.controllers == ["pad1": "iPad"], "解析连入设备并排除 Mac")
-    check(UUWatcher.participants(fromLine: #"{"data":{"device_id":"mac1","participants_info":[]},"type":"device_info_changed"}"#)?.controllers.isEmpty == true, "断开后连入设备为空")
 
     let t = Date()
     var gate = RemoteGate(grace: 30)
@@ -68,7 +64,7 @@ func selftest() -> Int32 {
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
     let slog = dir.appendingPathComponent("streamer_log_controlled.slog")
-    let watcher = UUWatcher(dir: dir, streamerLog: slog)
+    let watcher = UUWatcher(streamerLog: slog)
     watcher.start(interval: 3600)
     watcher.poll()
     check(!watcher.connected, "启动时没有串流日志")

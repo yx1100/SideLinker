@@ -13,7 +13,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var gate = RemoteGate(grace: 30) // UU 日志里见过断开 22 秒后又连上，30 秒内重连不来回切换
     private var remoteScreen: VirtualScreen?
     private var lockAfterRestore = false // UU 会话结束后恢复物理屏，再锁屏
-    private var autoSuppressed = false // 本次会话中手动恢复过，不再自动切换
     private var stableModes: [CGDirectDisplayID: Int32] = [:] // 持续 10 秒没变的分辨率，恢复时用
     private var pendingModes: [CGDirectDisplayID: Int32] = [:]
     private var pendingSince = Date()
@@ -35,24 +34,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let model = SettingsModel()
     private var settingsWindow: NSWindow?
 
-    /// 连入时自动切换单屏的设备：ID → 名称（兼容旧版只存 ID 的数组）
-    private var autoDevices: [String: String] {
-        get {
-            if let names = defaults.dictionary(forKey: "autoDevices") as? [String: String] { return names }
-            return Dictionary(uniqueKeysWithValues: (defaults.stringArray(forKey: "autoDevices") ?? []).map { ($0, $0) })
-        }
-        set { defaults.set(newValue, forKey: "autoDevices") }
-    }
-
-    /// 每台设备选的屏幕尺寸：设备 ID → ScreenSize.id
-    private var deviceSizes: [String: String] {
-        get { defaults.dictionary(forKey: "deviceScreenSizes") as? [String: String] ?? [:] }
-        set { defaults.set(newValue, forKey: "deviceScreenSizes") }
-    }
-    /// 用户自定义的设备名称：设备 ID → 名称，优先于 UU 里的名称
-    private var nicknames: [String: String] {
-        get { defaults.dictionary(forKey: "deviceNicknames") as? [String: String] ?? [:] }
-        set { defaults.set(newValue, forKey: "deviceNicknames") }
+    /// 虚拟屏的尺寸，在设置窗口里选
+    private var screenSize: ScreenSize {
+        get { ScreenSize.from(id: defaults.string(forKey: "screenSize")) }
+        set { defaults.set(newValue.id, forKey: "screenSize") }
     }
     private var activeSize: ScreenSize? // 只用 iPad 显示时虚拟屏的尺寸
 
@@ -119,11 +104,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         _ = gate.update(session: uu.connected, now: Date())
-        // 记住的设备连入时自动切换；电脑、手机等其他设备连入时不动
-        if !uu.connected { autoSuppressed = false }
-        if uu.connected, !gate.active, !remoteApplied, !autoSuppressed, !Set(autoDevices.keys).isDisjoint(with: uu.controllers.keys) {
-            gate.enter()
-        }
         if gate.active && uu.connected { lockAfterRestore = true }
         let locked = Session.isLocked
         if locked && !gate.active { lockAfterRestore = false } // 已被锁过（如 UU 自动锁屏），解锁后不再重复锁
@@ -138,9 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func enterRemote() {
         leavePortable()
-        // 尺寸按当前连入的设备选；有多台时优先记住的设备，没选过的用 13 英寸 iPad Pro
-        let controller = uu.controllers.keys.sorted { autoDevices[$0] != nil && autoDevices[$1] == nil }.first
-        let size = ScreenSize.from(id: controller.flatMap { deviceSizes[$0] })
+        let size = screenSize
         guard let screen = VirtualScreen(name: "SideLinker iPad", width: UInt32(size.width), height: UInt32(size.height),
                                          ppi: 264, productID: 1) else {
             gate.exit()
@@ -315,12 +293,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(.separator())
         menu.addItem(.sectionHeader(title: uu.connected ? "远程连接 · 已连接" : "远程连接 · 未连接"))
-        if uu.connected {
-            let custom = nicknames
-            for (id, name) in uu.controllers.sorted(by: { $0.value < $1.value }) {
-                menu.addItem(info(custom[id] ?? name, detail: platformName(id, name) ?? "", symbol: "ipad.landscape"))
-            }
-        }
         // 与设置窗口中的开关条件一致：UU 已连接，或单屏仍在开启中时可以操作
         if uu.connected || gate.active {
             let toggle = NSMenuItem()
@@ -384,31 +356,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.remoteActive = gate.active
         model.activeSize = activeSize
         model.busy = busy || (remoteApplied && !gate.active)
-        // 名称跟随 UU：设备每次连入，UU 都会在日志里写下它当前的名称，这里取最新的一条
-        for (id, name) in autoDevices { if let seen = uu.known[id], seen.name != name { autoDevices[id] = seen.name } }
-        let controllers = uu.connected ? uu.controllers : [:]
-        let sizes = deviceSizes
-        // 列出当前连入的、记住的、选过屏幕尺寸的设备；「忘记此设备」会把后两项都清掉
-        var names = autoDevices.merging(controllers) { _, new in new }
-        for id in sizes.keys where names[id] == nil { names[id] = uu.known[id]?.name ?? id }
-        let custom = nicknames
-        model.remoteDevices = names.sorted { (custom[$0.key] ?? $0.value) < (custom[$1.key] ?? $1.value) }.map { id, name in
-            // 自定义了名称时，说明里保留 UU 中的原名称
-            let parts = [platformName(id, name), custom[id] != nil ? "UU 名称：\(name)" : nil, id]
-            return .init(id: id, name: custom[id] ?? name, detail: parts.compactMap { $0 }.joined(separator: " · "),
-                  connected: controllers[id] != nil, auto: autoDevices[id] != nil, size: ScreenSize.from(id: sizes[id]))
-        }
+        model.screenSize = screenSize
         model.launchAtLogin = agent.status == .enabled
-    }
-
-    /// UU 的平台编号：1 Windows，3 iPhone 和 iPad 共用，4 macOS（按日志推断）。3 按名称区分 iPad 和 iPhone
-    private func platformName(_ id: String, _ name: String) -> String? {
-        switch uu.known[id]?.platform {
-        case 1: "Windows"
-        case 3: name.localizedCaseInsensitiveContains("iPhone") ? "iOS" : "iPadOS"
-        case 4: "macOS"
-        default: nil
-        }
     }
 
     private func bindModel() {
@@ -423,7 +372,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if gate.active {
                 gate.exit()
                 lockAfterRestore = false
-                autoSuppressed = uu.connected
             } else {
                 gate.enter()
             }
@@ -431,29 +379,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             refreshIcon()
             publish()
         }
-        model.setAutoDevice = { [weak self] id, on in
+        model.setScreenSize = { [weak self] size in
             guard let self else { return }
-            autoDevices[id] = on ? (uu.controllers[id] ?? autoDevices[id] ?? id) : nil
-            // 关掉自动开启不等于忘记：记下屏幕尺寸，设备继续留在列表里
-            if !on && deviceSizes[id] == nil { deviceSizes[id] = ScreenSize.standard.id }
-            publish()
-        }
-        model.forgetDevice = { [weak self] id in
-            guard let self else { return }
-            autoDevices[id] = nil
-            deviceSizes[id] = nil
-            nicknames[id] = nil
-            publish()
-        }
-        model.setNickname = { [weak self] id, name in
-            guard let self else { return }
-            let trimmed = name.trimmingCharacters(in: .whitespaces)
-            nicknames[id] = trimmed.isEmpty ? nil : trimmed // 清空即恢复使用 UU 中的名称
-            publish()
-        }
-        model.setScreenSize = { [weak self] id, size in
-            guard let self else { return }
-            deviceSizes[id] = size.id
+            screenSize = size
             publish()
         }
         model.setLaunchAtLogin = { [weak self] on in

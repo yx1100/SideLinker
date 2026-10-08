@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 常见 iPad 的横屏像素尺寸。UU 不提供连入设备的屏幕信息，由用户为每台设备选一次
+/// 常见 iPad 的横屏像素尺寸。UU 不提供连入设备的屏幕信息，由用户选择
 struct ScreenSize: Hashable, Identifiable {
     let name: String
     let width: Int
@@ -28,31 +28,18 @@ final class SettingsModel: ObservableObject {
         let connected: Bool
     }
 
-    /// 通过 UU 连入过的设备：当前连入的和已记住的
-    struct RemoteDevice: Identifiable {
-        let id: String
-        let name: String
-        let detail: String // 「iPadOS · 设备 ID」
-        let connected: Bool
-        let auto: Bool
-        let size: ScreenSize
-    }
-
     @Published var sidecarDevices: [Device] = []
     @Published var autoConnect = true
     @Published var uuConnected = false
     @Published var remoteActive = false
     @Published var activeSize: ScreenSize? // 使用 iPad 单屏显示时虚拟屏的尺寸
     @Published var busy = false
-    @Published var remoteDevices: [RemoteDevice] = []
+    @Published var screenSize = ScreenSize.standard
     @Published var launchAtLogin = false
 
     var setAutoConnect: (Bool) -> Void = { _ in }
     var toggleRemote: () -> Void = {}
-    var setAutoDevice: (String, Bool) -> Void = { _, _ in }
-    var setScreenSize: (String, ScreenSize) -> Void = { _, _ in }
-    var forgetDevice: (String) -> Void = { _ in }
-    var setNickname: (String, String) -> Void = { _, _ in }
+    var setScreenSize: (ScreenSize) -> Void = { _ in }
     var setLaunchAtLogin: (Bool) -> Void = { _ in }
 }
 
@@ -82,10 +69,6 @@ struct SettingsView: View {
     @State private var pane: Pane? = {
         UserDefaults.standard.string(forKey: "settingsPane").flatMap(Pane.init(rawValue:))
     }() ?? .sidecar
-    @State private var editingID: String? // 正在编辑名称的设备
-    @State private var draftName = ""
-    @State private var forgetting: String? // 等待确认忘记的设备
-    @FocusState private var nameFocused: Bool
     @State private var showWirelessTips = false // 两组使用须知默认折叠
     @State private var showBootTips = false
 
@@ -183,38 +166,13 @@ struct SettingsView: View {
             }
             .disabled(model.busy || !(model.uuConnected || model.remoteActive))
         }
-        if model.remoteDevices.isEmpty {
-            Section("设备") {
-                Text("暂无通过 UU 远程接入的设备").foregroundStyle(.secondary)
-            }
-        }
-        ForEach(model.remoteDevices) { device in
-            Section {
-                Toggle("接入时自动启用「使用 iPad 单屏显示」", isOn: Binding(get: { device.auto }, set: { model.setAutoDevice(device.id, $0) }))
-                Picker("屏幕尺寸", selection: Binding(get: { device.size }, set: { model.setScreenSize(device.id, $0) })) {
-                    ForEach(ScreenSize.all) { size in
-                        Text("\(size.name)　\(size.text)").tag(size)
-                    }
-                }
-                HStack {
-                    Spacer()
-                    Button("忘记此设备") { forgetting = device.id }
-                        .alert("要忘记「\(device.name)」吗？", isPresented: Binding(
-                            get: { forgetting == device.id }, set: { if !$0 { forgetting = nil } })) {
-                            Button("忘记", role: .destructive) { model.forgetDevice(device.id) }
-                            Button("取消", role: .cancel) {}
-                        } message: {
-                            Text("将清除此设备的自动启用设置、屏幕尺寸和自定义名称。")
-                        }
-                }
-            } header: {
-                HStack(alignment: .firstTextBaseline) {
-                    nameEditor(device)
-                    Text(device.detail).font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    if device.connected { status(true, on: "已接入", off: "") }
+        Section {
+            Picker("屏幕尺寸", selection: Binding(get: { model.screenSize }, set: model.setScreenSize)) {
+                ForEach(ScreenSize.all) { size in
+                    Text("\(size.name)　\(size.text)").tag(size)
                 }
             }
+            .disabled(model.remoteActive) // 新尺寸在下次开启时生效，开启期间不允许修改
         }
     }
 
@@ -271,39 +229,6 @@ struct SettingsView: View {
         }
         .padding(.vertical, 2)
         .tag(pane)
-    }
-
-    /// 设备名称：点击后就地编辑，回车或移开焦点时保存，Esc 取消，清空则恢复 UU 中的名称
-    @ViewBuilder private func nameEditor(_ device: SettingsModel.RemoteDevice) -> some View {
-        if editingID == device.id {
-            Label {
-                TextField("设备名称", text: $draftName)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 180)
-                    .focused($nameFocused)
-                    .onSubmit { commitName() }
-                    .onExitCommand { editingID = nil }
-                    .onChange(of: nameFocused) { if !nameFocused { commitName() } }
-            } icon: {
-                Image(systemName: "ipad.landscape")
-            }
-        } else {
-            Button {
-                draftName = device.name
-                editingID = device.id
-                nameFocused = true
-            } label: {
-                Label(device.name, systemImage: "ipad.landscape")
-            }
-            .buttonStyle(.plain)
-            .help("点击修改设备名称")
-        }
-    }
-
-    private func commitName() {
-        guard let id = editingID else { return }
-        editingID = nil
-        model.setNickname(id, draftName)
     }
 
     /// 系统设置风格的状态：圆点加文字
