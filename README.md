@@ -14,7 +14,7 @@ Built on macOS private frameworks (SidecarCore, CGVirtualDisplay), with no third
 
 ## Install
 
-Requires macOS 14 or later, on Apple silicon or Intel.
+Requires macOS 14 or later on a Mac with Apple silicon.
 
 **Download**
 
@@ -35,7 +35,7 @@ Requires Xcode or the Command Line Tools.
 ./build.sh install
 ```
 
-The app is installed to `/Applications/SideLinker.app` and started. `./build.sh release` builds a universal binary and packages it as a zip.
+The app is installed to `/Applications/SideLinker.app` and started. `./build.sh release` also packages it as a zip.
 
 **First run**
 

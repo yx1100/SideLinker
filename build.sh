@@ -1,13 +1,11 @@
 #!/bin/bash
 # 构建 build/SideLinker.app；./build.sh install 额外复制到 /Applications；
-# ./build.sh release 构建 Apple 芯片和 Intel 通用版本，打包成 build/SideLinker-版本号.zip
+# ./build.sh release 额外打包成 build/SideLinker-版本号.zip（仅支持 Apple 芯片）
 set -euo pipefail
 cd "$(dirname "$0")"
 
-ARCHS=()
-[[ "${1:-}" == release ]] && ARCHS=(--arch arm64 --arch x86_64)
-swift build -c release ${ARCHS[@]+"${ARCHS[@]}"}
-BIN="$(swift build -c release ${ARCHS[@]+"${ARCHS[@]}"} --show-bin-path)/SideLinker"
+swift build -c release --arch arm64
+BIN="$(swift build -c release --arch arm64 --show-bin-path)/SideLinker"
 APP=build/SideLinker.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

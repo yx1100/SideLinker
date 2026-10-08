@@ -14,7 +14,7 @@ macOS 菜单栏工具，让 iPad 在三种场景下作为 Mac 的显示器。
 
 ## 安装
 
-需要 macOS 14 及以上，支持 Apple 芯片和 Intel 芯片的 Mac。
+需要 macOS 14 及以上，仅支持 Apple 芯片的 Mac。
 
 **下载安装**
 
@@ -35,7 +35,7 @@ macOS 菜单栏工具，让 iPad 在三种场景下作为 Mac 的显示器。
 ./build.sh install
 ```
 
-App 安装到 `/Applications/SideLinker.app` 并自动启动。`./build.sh release` 会构建通用版本并打包成 zip。
+App 安装到 `/Applications/SideLinker.app` 并自动启动。`./build.sh release` 会额外打包成 zip。
 
 **首次运行**
 
