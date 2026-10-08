@@ -33,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private let model = SettingsModel()
     private var settingsWindow: NSWindow?
+    private var previousApp: NSRunningApplication? // 打开菜单前处于前台的 App
 
     /// 虚拟屏的尺寸，在设置窗口里选
     private var screenSize: ScreenSize {
@@ -310,6 +311,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// 和控制中心一样，拨动开关后菜单保持打开，原地刷新内容
+    /// 菜单栏 App 不在前台时，菜单里的开关按非活跃窗口绘制成灰色。打开菜单时临时切到前台，关闭后还给原来的 App
+    func menuWillOpen(_ menu: NSMenu) {
+        let front = NSWorkspace.shared.frontmostApplication
+        previousApp = front == .current ? nil : front
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        let app = previousApp
+        previousApp = nil
+        // 菜单项的动作在关闭后才执行：点了「设置…」时保持在前台
+        DispatchQueue.main.async { if self.settingsWindow?.isKeyWindow != true { app?.activate() } }
+    }
+
     @objc private func toggleRemote() {
         model.toggleRemote()
         DispatchQueue.main.async { if let menu = self.statusItem.menu { self.menuNeedsUpdate(menu) } }
