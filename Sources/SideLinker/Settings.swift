@@ -160,19 +160,21 @@ struct SettingsView: View {
             LabeledContent("UU 远程连接") {
                 status(model.uuConnected, on: "已连接", off: "未连接")
             }
-            Toggle(isOn: Binding(get: { model.remoteActive }, set: { _ in model.toggleRemote() })) {
-                Text("使用 iPad 单屏显示")
-                Text(model.activeSize.map { "已开启，分辨率 \($0.text)" } ?? "停用其他显示器，仅保留一块与 iPad 尺寸相同的虚拟显示器")
-            }
-            .disabled(model.busy || !(model.uuConnected || model.remoteActive))
         }
-        Section {
+        // 先选屏幕尺寸，再开启单屏；开启期间尺寸不可修改
+        Section("单屏显示") {
             Picker("屏幕尺寸", selection: Binding(get: { model.screenSize }, set: model.setScreenSize)) {
                 ForEach(ScreenSize.all) { size in
                     Text("\(size.name)　\(size.text)").tag(size)
                 }
             }
-            .disabled(model.remoteActive) // 新尺寸在下次开启时生效，开启期间不允许修改
+            .disabled(model.remoteActive)
+            Toggle(isOn: Binding(get: { model.remoteActive }, set: { _ in model.toggleRemote() })) {
+                Text("使用 iPad 单屏显示")
+                Text(model.activeSize.map { "已开启，分辨率 \($0.text)" }
+                     ?? "停用其他显示器，仅保留一块 \(model.screenSize.text) 的虚拟显示器")
+            }
+            .disabled(model.busy || !(model.uuConnected || model.remoteActive))
         }
     }
 
