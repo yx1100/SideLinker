@@ -6,11 +6,10 @@ cd "$(dirname "$0")"
 swift build -c release
 APP=build/SideLinker.app
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Library/LaunchAgents"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/SideLinker "$APP/Contents/MacOS/"
 cp Resources/Info.plist "$APP/Contents/"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/"
-cp Resources/com.yx1100.sidelinker.plist "$APP/Contents/Library/LaunchAgents/"
 codesign --force --sign - "$APP"
 echo "已构建 $APP"
 
@@ -23,10 +22,11 @@ if [[ "${1:-}" == install ]]; then
   rm -rf /Applications/SideLinker.app
   cp -R "$APP" /Applications/
   echo "已安装到 /Applications/SideLinker.app"
-  # 登录项已注册时交给 launchd 启动，崩溃后会被自动拉起
+  # 开启了「登录时启动」时交给 launchd 启动，崩溃后会被自动拉起
   JOB="gui/$(id -u)/com.yx1100.sidelinker"
-  if launchctl print "$JOB" >/dev/null 2>&1; then
-    launchctl kickstart "$JOB"
+  PLIST="$HOME/Library/LaunchAgents/com.yx1100.sidelinker.plist"
+  if [[ -f "$PLIST" ]]; then
+    launchctl kickstart "$JOB" 2>/dev/null || launchctl bootstrap "gui/$(id -u)" "$PLIST"
   else
     open /Applications/SideLinker.app
   fi

@@ -9,7 +9,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let defaults = UserDefaults.standard
     private let work = DispatchQueue(label: "sidelinker.work") // 显示配置和随航连接都会阻塞等待，串行放在这里
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    private let agent = SMAppService.agent(plistName: "com.yx1100.sidelinker.plist")
     private let uu = UUWatcher()
     private var gate = RemoteGate(grace: 30) // UU 日志里见过断开 22 秒后又连上，30 秒内重连不来回切换
     private var remoteScreen: VirtualScreen?
@@ -56,6 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             exit(0)
         }
         Log.write("启动")
+        LoginItem.migrate()
         bindModel()
         registerRestoreShortcut()
         refreshIcon()
@@ -396,7 +396,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         update(\.activeSize, activeSize)
         update(\.busy, busy || (remoteApplied && !gate.active))
         update(\.screenSize, screenSize)
-        update(\.launchAtLogin, agent.status == .enabled)
+        update(\.launchAtLogin, LoginItem.isEnabled)
     }
 
     private func update<T: Equatable>(_ key: ReferenceWritableKeyPath<SettingsModel, T>, _ value: T) {
@@ -457,8 +457,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.setLaunchAtLogin = { [weak self] on in
             guard let self else { return }
             do {
-                if on { try agent.register() } else { try agent.unregister() }
-                if agent.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
+                if on { try LoginItem.enable() } else { try LoginItem.disable() }
             } catch {
                 notify("设置登录时启动失败：\(error.localizedDescription)")
             }
@@ -530,20 +529,71 @@ enum Log {
 
     static func write(_ text: String) {
         let line = "\(formatter.string(from: Date())) \(text)\n"
-        DispatchQueue.main.async { // 后台队列也会调用，统一到主线程写，避免交错
-            let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int ?? 0
-            if size > 1_000_000 {
-                let old = url.deletingLastPathComponent().appendingPathComponent("SideLinker.old.log")
-                try? FileManager.default.removeItem(at: old)
-                try? FileManager.default.moveItem(at: url, to: old)
-            }
-            guard let handle = try? FileHandle(forWritingTo: url) else {
-                try? Data(line.utf8).write(to: url)
-                return
-            }
-            handle.seekToEndOfFile()
-            handle.write(Data(line.utf8))
-            try? handle.close()
+        // 后台队列也会调用，统一到主线程写，避免交错；主线程上直接写，退出前的记录才不会丢
+        if Thread.isMainThread { append(line) } else { DispatchQueue.main.async { append(line) } }
+    }
+
+    private static func append(_ line: String) {
+        let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int ?? 0
+        if size > 1_000_000 {
+            let old = url.deletingLastPathComponent().appendingPathComponent("SideLinker.old.log")
+            try? FileManager.default.removeItem(at: old)
+            try? FileManager.default.moveItem(at: url, to: old)
         }
+        guard let handle = try? FileHandle(forWritingTo: url) else {
+            try? Data(line.utf8).write(to: url)
+            return
+        }
+        handle.seekToEndOfFile()
+        handle.write(Data(line.utf8))
+        try? handle.close()
+    }
+}
+
+/// 登录时启动：~/Library/LaunchAgents 下的 LaunchAgent，崩溃后由 launchd 拉起并恢复显示器。
+/// 不用 SMAppService：它按注册时的签名校验，ad-hoc 签名每次构建都会变，重装后会被拒绝启动（OS_REASON_CODESIGNING）
+enum LoginItem {
+    static let label = "com.yx1100.sidelinker"
+    private static let plist = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/LaunchAgents/\(label).plist")
+
+    static var isEnabled: Bool { FileManager.default.fileExists(atPath: plist.path) }
+
+    static func enable() throws {
+        guard let program = Bundle.main.executablePath else { return }
+        let job: [String: Any] = [
+            "Label": label,
+            "ProgramArguments": [program],
+            "RunAtLoad": true,
+            "KeepAlive": ["SuccessfulExit": false], // 从菜单正常退出则不拉起
+            "LimitLoadToSessionType": "Aqua",
+            "ProcessType": "Interactive",
+        ]
+        try FileManager.default.createDirectory(at: plist.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try PropertyListSerialization.data(fromPropertyList: job, format: .xml, options: 0).write(to: plist)
+        // 立即加载，之后安装新版时可以由 launchd 启动；RunAtLoad 拉起的第二个实例会因重复运行自行退出
+        launchctl(["bootstrap", "gui/\(getuid())", plist.path])
+    }
+
+    /// 只删配置文件，不卸载任务：卸载会结束正在运行的 App。本次登录内任务仍然有效，下次登录起不再启动
+    static func disable() throws {
+        try FileManager.default.removeItem(at: plist)
+    }
+
+    /// 旧版用 SMAppService 注册过登录项：注销后改为 LaunchAgent
+    static func migrate() {
+        let old = SMAppService.agent(plistName: "\(label).plist")
+        guard old.status == .enabled || old.status == .requiresApproval else { return }
+        try? old.unregister()
+        try? enable()
+        Log.write("登录项已改为 LaunchAgent")
+    }
+
+    private static func launchctl(_ arguments: [String]) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        process.arguments = arguments
+        try? process.run()
+        process.waitUntilExit()
     }
 }

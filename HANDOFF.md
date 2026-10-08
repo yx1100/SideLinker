@@ -32,7 +32,7 @@ UU 远程的单屏切换只能手动开启（菜单栏或设置窗口）。用�
 
 - **便携随航整条链路**：用户还没有 Mac mini。占位虚拟屏、自动重连、镜像这些逻辑只在代码层面写好，没有在无屏开机的机器上跑过
 - **需要点击才能看到的界面**：菜单栏滑动开关与上方各行的对齐、使用须知的展开。编译通过，没有截图确认
-- **登录时启动**（`SMAppService.agent`）：没有在 `/Applications` 安装版上注册测试过
+- **登录时启动**：改为 `~/Library/LaunchAgents/com.yx1100.sidelinker.plist`（`LoginItem`）。已实测 `kill -9` 后 launchd 自动拉起；重启后的登录启动还没测
 
 ### 待办
 
@@ -53,7 +53,6 @@ Sources/SideLinker/
   App.swift        AppDelegate：状态机、菜单栏、设置窗口、通知、登录启动
   Settings.swift   SettingsModel（ObservableObject）+ SettingsView（SwiftUI）
 Resources/Info.plist                  LSUIElement，Bundle ID com.yx1100.sidelinker
-Resources/com.yx1100.sidelinker.plist LaunchAgent，KeepAlive{SuccessfulExit=false}
 build.sh                              swift build → build/SideLinker.app → ad-hoc 签名；install 参数：结束旧进程并等它退出（单屏开启时要先恢复显示器），复制到 /Applications，登录项已注册时用 `launchctl kickstart` 启动，保证在 launchd 守护下运行
 ```
 
@@ -101,6 +100,7 @@ open build/SideLinker.app                     # 运行；再次 open 会弹出�
 
 - 编辑器里的 SourceKit 报错（找不到 `CGPrivate` 模块、找不到其他文件里的类型）是误报，以 `swift build` 的结果为准
 - 截图设置窗口：用 `CGWindowListCopyWindowInfo` 找到 SideLinker 的窗口 ID，再 `screencapture -x -o -l <ID>`。computer-use 找不到这个 App（不在应用索引里）
+- 不要用 `SMAppService` 注册登录项：它按注册时的代码签名校验，ad-hoc 签名每次构建都会变，重装后 launchd 拒绝启动（`OS_REASON_CODESIGNING` / `EX_CONFIG`），登录启动和崩溃拉起都会静默失效。旧注册在启动时由 `LoginItem.migrate()` 注销并改为 LaunchAgent
 - 运行日志：`~/Library/Logs/SideLinker.log`（`Log.write`），超过 1 MB 轮换为 `SideLinker.old.log`
 - 紧急恢复快捷键 ⌃⌥⌘R（Carbon `RegisterEventHotKey`，无需辅助功能权限），效果同手动关闭单屏
 - 单屏开启时不要重装或重启 App：退出时会恢复物理显示器，用户正在远程的单屏会被关掉
