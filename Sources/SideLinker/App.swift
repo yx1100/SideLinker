@@ -297,7 +297,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // 与设置窗口中的开关条件一致：UU 已连接，或单屏仍在开启中时可以操作
         if uu.connected || gate.active {
             let toggle = NSMenuItem()
-            toggle.view = SwitchRow(title: "使用 iPad 单屏显示", detail: activeSize.map { "分辨率 \($0.text)" },
+            toggle.view = SwitchRow(title: "使用 iPad 单屏显示", detail: (activeSize ?? screenSize).summary,
                                     symbol: "rectangle.inset.filled", on: gate.active, enabled: !model.busy,
                                     target: self, action: #selector(toggleRemote))
             menu.addItem(toggle)
@@ -458,6 +458,7 @@ private final class SwitchRow: NSView {
             row.topAnchor.constraint(equalTo: topAnchor), row.bottomAnchor.constraint(equalTo: bottomAnchor),
             icon.widthAnchor.constraint(equalToConstant: 16),
         ])
+        frame.size.width = max(frame.width, fittingSize.width) // 副标题较长时撑宽菜单，不截断
     }
 
     required init?(coder: NSCoder) { fatalError() }

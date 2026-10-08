@@ -7,6 +7,7 @@ struct ScreenSize: Hashable, Identifiable {
     let height: Int
     var id: String { "\(width)x\(height)" }
     var text: String { "\(width) × \(height)" }
+    var summary: String { "\(name) · \(text)" } // 对应的 iPad 和分辨率
 
     static let all = [
         ScreenSize(name: "iPad Pro 13 英寸（M4 及后续机型）", width: 2752, height: 2064),
@@ -171,7 +172,7 @@ struct SettingsView: View {
             .disabled(model.remoteActive)
             Toggle(isOn: Binding(get: { model.remoteActive }, set: { _ in model.toggleRemote() })) {
                 Text("使用 iPad 单屏显示")
-                Text(model.activeSize.map { "已开启，分辨率 \($0.text)" }
+                Text(model.activeSize.map { "已开启：\($0.summary)" }
                      ?? "停用其他显示器，仅保留一块 \(model.screenSize.text) 的虚拟显示器")
             }
             .disabled(model.busy || !(model.uuConnected || model.remoteActive))
