@@ -14,13 +14,32 @@ macOS 菜单栏工具，让 iPad 在三种场景下作为 Mac 的显示器。
 
 ## 安装
 
-需要 macOS 14 及以上，以及 Xcode 或 Command Line Tools。
+需要 macOS 14 及以上，支持 Apple 芯片和 Intel 芯片的 Mac。
+
+**下载安装**
+
+1. 从 [Releases](https://github.com/yx1100/SideLinker/releases) 下载 `SideLinker-版本号.zip`，解压后把 `SideLinker.app` 拖进「应用程序」文件夹。
+2. App 没有经过 Apple 公证，第一次打开会被系统拦截。在终端执行下面的命令后再打开：
+
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/SideLinker.app
+   ```
+
+   也可以先双击打开一次，再到「系统设置 → 隐私与安全性」底部点「仍要打开」。
+
+**从源码构建**
+
+需要 Xcode 或 Command Line Tools。
 
 ```bash
 ./build.sh install
 ```
 
-App 安装到 `/Applications/SideLinker.app` 并自动启动。在设置窗口「通用」中开启「登录时启动」，之后由系统负责启动，App 崩溃时会被自动拉起并恢复显示器。
+App 安装到 `/Applications/SideLinker.app` 并自动启动。`./build.sh release` 会构建通用版本并打包成 zip。
+
+**首次运行**
+
+在设置窗口「通用」中开启「登录时启动」，之后由系统负责启动，App 崩溃时会被自动拉起并恢复显示器。
 
 ## 使用
 

@@ -14,13 +14,32 @@ Built on macOS private frameworks (SidecarCore, CGVirtualDisplay), with no third
 
 ## Install
 
-Requires macOS 14 or later and Xcode or the Command Line Tools.
+Requires macOS 14 or later, on Apple silicon or Intel.
+
+**Download**
+
+1. Download `SideLinker-<version>.zip` from [Releases](https://github.com/yx1100/SideLinker/releases), unzip it and move `SideLinker.app` to Applications.
+2. The app is not notarized by Apple, so macOS blocks it on first launch. Run this in Terminal, then open the app:
+
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/SideLinker.app
+   ```
+
+   Alternatively, open it once, then click "Open Anyway" at the bottom of System Settings → Privacy & Security.
+
+**Build from source**
+
+Requires Xcode or the Command Line Tools.
 
 ```bash
 ./build.sh install
 ```
 
-The app is installed to `/Applications/SideLinker.app` and started. Turn on "登录时启动" (Launch at Login) under 通用 (General) in the settings window; launchd then starts the app and relaunches it after a crash, which restores the displays.
+The app is installed to `/Applications/SideLinker.app` and started. `./build.sh release` builds a universal binary and packages it as a zip.
+
+**First run**
+
+Turn on "登录时启动" (Launch at Login) under 通用 (General) in the settings window; launchd then starts the app and relaunches it after a crash, which restores the displays.
 
 ## Usage
 
