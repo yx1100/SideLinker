@@ -45,6 +45,10 @@ func selftest() -> Int32 {
     check(UUWatcher.sessionActive(modified: t0 - 5, now: t0), "串流日志刚写过，会话中")
     check(!UUWatcher.sessionActive(modified: t0 - 20, now: t0), "串流日志 20 秒没写，已断开")
     check(!UUWatcher.sessionActive(modified: nil, now: t0), "没有串流日志，已断开")
+    check(UUWatcher.connected(overlaySeen: t0 - 2, logOnlySince: nil, now: t0), "覆盖窗口 2 秒前还在，连着")
+    check(!UUWatcher.connected(overlaySeen: t0 - 4, logOnlySince: nil, now: t0), "覆盖窗口消失 4 秒，已断开")
+    check(!UUWatcher.connected(overlaySeen: .distantPast, logOnlySince: t0 - 10, now: t0), "只有日志在写 10 秒，可能刚断开")
+    check(UUWatcher.connected(overlaySeen: .distantPast, logOnlySince: t0 - 20, now: t0), "只有日志在写 20 秒，覆盖窗口失效，按日志算连着")
 
     let t = Date()
     var gate = RemoteGate(grace: 30)
@@ -64,16 +68,22 @@ func selftest() -> Int32 {
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
     let slog = dir.appendingPathComponent("streamer_log_controlled.slog")
-    let watcher = UUWatcher(streamerLog: slog)
+    var overlay = false
+    var server = false
+    let watcher = UUWatcher(streamerLog: slog, overlayPresent: { overlay }, serverRunning: { server })
     watcher.start(interval: 3600)
     watcher.poll()
-    check(!watcher.connected && !watcher.detectable, "没有串流日志时无法检测")
+    check(!watcher.connected && !watcher.detectable, "UU 没运行、没有串流日志时无法检测")
+    server = true
+    watcher.poll()
+    check(!watcher.connected && watcher.detectable, "UU 在运行时可以检测")
+    overlay = true
+    watcher.poll()
+    check(watcher.connected, "出现覆盖窗口识别为已连接")
+    overlay = false
     try? Data([1]).write(to: slog)
     watcher.poll()
-    check(watcher.connected && watcher.detectable, "串流日志写入后识别为已连接")
-    try? FileManager.default.setAttributes([.modificationDate: Date() - 60], ofItemAtPath: slog.path)
-    watcher.poll()
-    check(!watcher.connected, "串流日志停写后识别为断开")
+    check(watcher.connected, "覆盖窗口刚消失，仍算连着")
 
     print(failures == 0 ? "selftest 全部通过" : "selftest 失败 \(failures) 项")
     return failures == 0 ? 0 : 1
