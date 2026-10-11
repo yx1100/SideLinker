@@ -39,7 +39,7 @@ The app is installed to `/Applications/SideLinker.app` and started. `./build.sh 
 
 **First run**
 
-Turn on "登录时启动" (Launch at Login) under 通用 (General) in the settings window; launchd then starts the app and relaunches it after a crash, which restores the displays.
+A short introduction appears on first launch; its last page can turn on "登录时启动" (Launch at Login). launchd then starts the app and relaunches it after a crash or when its main thread stops responding for 60 seconds, which restores the displays. The introduction can be opened again under 通用 (General) in the settings window.
 
 ## Usage
 
@@ -53,8 +53,8 @@ Turn on "登录时启动" (Launch at Login) under 通用 (General) in the settin
 **Settings window**
 
 - Sidecar: nearby iPads and their status, the "connect automatically when no display is attached" switch, and notes on wireless Sidecar and headless startup
-- Remote connection: UU status; choose the screen size of the virtual display, then turn on "使用 iPad 单屏显示". The status reads "无法检测" (cannot detect) when UU's session log is missing
-- General: Launch at Login
+- Remote connection: UU status; choose the screen size of the virtual display, then turn on "使用 iPad 单屏显示". The status reads "无法检测" (cannot detect) when UU is not running and its session log is missing
+- General: Launch at Login and the introduction
 
 ## Before you start
 

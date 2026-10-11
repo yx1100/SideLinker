@@ -43,6 +43,7 @@ final class SettingsModel: ObservableObject {
     var toggleRemote: () -> Void = {}
     var setScreenSize: (ScreenSize) -> Void = { _ in }
     var setLaunchAtLogin: (Bool) -> Void = { _ in }
+    var showTour: () -> Void = {}
 }
 
 private enum Pane: String, CaseIterable, Identifiable {
@@ -189,6 +190,9 @@ struct SettingsView: View {
         }
         Section {
             LabeledContent("版本", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-")
+            LabeledContent("功能介绍") {
+                Button("查看", action: model.showTour)
+            }
         }
     }
 

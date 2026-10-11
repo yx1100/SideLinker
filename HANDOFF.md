@@ -49,7 +49,8 @@ Sources/SideLinker/
   main.swift       命令行入口：devices / connect [名称] / disconnect [名称] / selftest；无参数时启动 App
   Sidecar.swift    SidecarCore 私有框架封装（dlopen + NSClassFromString）
   Displays.swift   VirtualScreen、Session（锁屏检测、锁屏）、Displays（单屏进入/恢复、镜像、分辨率）
-  UUWatcher.swift  按 UU 被控端日志的写入时间判断会话；RemoteGate（单屏退出判定）
+  UUWatcher.swift  按 UU 覆盖窗口和被控端日志判断会话；RemoteGate（单屏退出判定）
+  Tour.swift       首次启动的功能介绍（UserDefaults 键 `tourShown`），设置「通用」里可再次打开
   App.swift        AppDelegate：状态机、菜单栏、设置窗口、通知、登录启动
   Settings.swift   SettingsModel（ObservableObject）+ SettingsView（SwiftUI）
 Resources/Info.plist                  LSUIElement，Bundle ID com.yx1100.sidelinker
@@ -75,7 +76,9 @@ build.sh                              swift build → build/SideLinker.app → a
 ### UU 远程（UUWatcher.swift、App.swift）
 
 - 日志目录：`~/Library/Application Support/com.netease.uuremote/Logs/UURemoteMac_*.log`，按天换新文件，按文件名排序就是按时间排序
-- 会话状态：看 `/Users/Shared/UURemote/<uid>/com.netease.uuremote.server/Logs/Streamer/streamer_log_controlled.slog` 的修改时间，15 秒内写过算会话中。这个文件内容加密，只在被控会话期间每 3～8 秒写一次，空闲时不动（2026-10-08 在 UU 4.42 上实测）
+- 会话状态主信号：UURemoteServer 被控期间在每块屏幕上铺一层透明窗口（层级 2147483631），`CGWindowListCopyWindowInfo` 可见，不需要权限，断开后立即消失。3 秒内出现过就算连着（切换显示器时窗口会短暂重建）。做法来自 aoyamashou/UUyc-companion，2026-10-11 实测可用
+- 备用信号：`/Users/Shared/UURemote/<uid>/com.netease.uuremote.server/Logs/Streamer/streamer_log_controlled.slog` 的修改时间，15 秒内写过算在写。这个文件内容加密，只在被控会话期间每 3～8 秒写一次（2026-10-08 在 UU 4.42 上实测）。只有日志在写、没有覆盖窗口持续 20 秒，才按日志算连着：断开后日志最多再「新鲜」15 秒，超过说明覆盖窗口检测失效
+- 「无法检测」：没有覆盖窗口、没有串流日志，UURemoteServer 也没在运行
 - `RemoteGate`：只能手动进入；断开满 30 秒才退出（日志里见过断开 22 秒后又连上）；没有会话时进入，30 秒后自动退出
 - **要求用户关闭 UU 的「结束远程自动锁屏」**：否则 UU 先锁屏，物理屏要等解锁后才能恢复。现在由 SideLinker 恢复后调用 `SACLockScreenImmediate`（login.framework）锁屏。手动关闭「使用 iPad 单屏显示」时不锁屏
 - UU 4.42 起明文日志改为加密格式（Mars xlog，`LogCache/*.mmap3`），读不到连入设备。4.38 及之前可以从明文日志的 `device_info_changed` 推送读到设备 ID 和名称，相关代码已删除，需要时可从 git 历史找回
@@ -102,6 +105,7 @@ open build/SideLinker.app                     # 运行；再次 open 会弹出�
 - 截图设置窗口：用 `CGWindowListCopyWindowInfo` 找到 SideLinker 的窗口 ID，再 `screencapture -x -o -l <ID>`。computer-use 找不到这个 App（不在应用索引里）
 - 不要用 `SMAppService` 注册登录项：它按注册时的代码签名校验，ad-hoc 签名每次构建都会变，重装后 launchd 拒绝启动（`OS_REASON_CODESIGNING` / `EX_CONFIG`），登录启动和崩溃拉起都会静默失效。旧注册在启动时由 `LoginItem.migrate()` 注销并改为 LaunchAgent
 - 运行日志：`~/Library/Logs/SideLinker.log`（`Log.write`），超过 1 MB 轮换为 `SideLinker.old.log`
+- 卡死保护（`HangGuard`）：后台队列每 5 秒向主线程发一次心跳，主线程超过 60 秒没响应就记日志并 `_exit(1)`，由 launchd 拉起后恢复物理屏。只在 `XPC_SERVICE_NAME` 等于 LaunchAgent 标签（即由 launchd 启动）时退出。60 秒要大于退出时恢复显示器的最长阻塞时间（约 35 秒）
 - 紧急恢复快捷键 ⌃⌥⌘R（Carbon `RegisterEventHotKey`，无需辅助功能权限），效果同手动关闭单屏
 - 单屏开启时不要重装或重启 App：退出时会恢复物理显示器，用户正在远程的单屏会被关掉
 - **任何会关掉屏幕的测试，必须先征得用户同意**，并在后台挂一个安全网：未锁屏、没有 SideLinker 虚拟屏（vendor 0x5344）、物理屏缺失超过 25 秒时，逐块调用 `CGSConfigureDisplayEnabled(true)` 打开。锁屏状态下只能等用户解锁（触控 ID 或盲输密码）后再打开

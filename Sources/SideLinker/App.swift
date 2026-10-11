@@ -33,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private let model = SettingsModel()
     private var settingsWindow: NSWindow?
+    private var tourWindow: NSWindow?
     private var previousApp: NSRunningApplication? // 打开菜单前处于前台的 App
     private var lastUUConnected = false // 只在状态变化时写日志
     private var hotKey: EventHotKeyRef?
@@ -58,6 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         LoginItem.migrate()
         bindModel()
         registerRestoreShortcut()
+        HangGuard.start()
         refreshIcon()
         let menu = NSMenu()
         menu.delegate = self
@@ -80,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.refreshIcon()
             self?.publish()
         }
+        if !defaults.bool(forKey: "tourShown") { showTour() }
     }
 
     /// 在启动台或「应用程序」里再次打开 SideLinker 时显示设置窗口
@@ -381,6 +384,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settingsWindow?.makeKeyAndOrderFront(nil)
     }
 
+    /// 功能介绍：首次启动时显示，之后可在设置的「通用」中再次打开
+    private func showTour() {
+        defaults.set(true, forKey: "tourShown")
+        if tourWindow == nil {
+            let window = NSWindow(contentViewController: NSHostingController(rootView: TourView(model: model) { [weak self] in
+                self?.tourWindow?.close()
+            }))
+            window.styleMask = [.titled, .closable, .fullSizeContentView]
+            window.isReleasedWhenClosed = false
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            window.center()
+            tourWindow = window
+        }
+        publish()
+        NSApp.activate(ignoringOtherApps: true)
+        tourWindow?.makeKeyAndOrderFront(nil)
+    }
+
     /// 把当前状态写进设置窗口的模型
     private func publish() {
         // SidecarCore 每次调用 devices/connectedDevices 可能返回新对象实例，不能用引用比较，用 identifier 匹配
@@ -449,6 +471,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             refreshIcon()
             publish()
         }
+        model.showTour = { [weak self] in self?.showTour() }
         model.setScreenSize = { [weak self] size in
             guard let self else { return }
             screenSize = size
@@ -533,6 +556,11 @@ enum Log {
         if Thread.isMainThread { append(line) } else { DispatchQueue.main.async { append(line) } }
     }
 
+    /// 主线程卡住时由其他线程直接写
+    static func writeNow(_ text: String) {
+        append("\(formatter.string(from: Date())) \(text)\n")
+    }
+
     private static func append(_ line: String) {
         let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int ?? 0
         if size > 1_000_000 {
@@ -548,6 +576,34 @@ enum Log {
         handle.write(Data(line.utf8))
         try? handle.close()
     }
+}
+
+/// 主线程卡住超过 limit 秒就结束进程，由 launchd 重新拉起，启动后按记录恢复物理屏。
+/// 正常退出时 applicationWillTerminate 恢复显示器最多阻塞约 35 秒，limit 要大于它。
+/// 不是 launchd 启动的（未开启登录时启动）没人拉起，只记日志
+enum HangGuard {
+    private static let queue = DispatchQueue(label: "sidelinker.hang-guard")
+    private static var lastBeat = DispatchTime.now() // 只在 queue 上读写；DispatchTime 睡眠时不走，唤醒后不会误判
+
+    static func start(limit: Double = 60) {
+        let underLaunchd = ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"] == LoginItem.label
+        var reported = false
+        lastBeat = .now() // 先于计时器赋值：静态变量在首次读取时才初始化，晚于 handler 里的 now() 会让减法溢出
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now(), repeating: 5)
+        timer.setEventHandler {
+            let stalled = Double(DispatchTime.now().uptimeNanoseconds - lastBeat.uptimeNanoseconds) / 1e9
+            if stalled > limit && !reported {
+                reported = true
+                Log.writeNow("主线程无响应 \(Int(stalled)) 秒" + (underLaunchd ? "，结束进程等待重新启动" : "，未开启登录时启动，无法自动恢复"))
+                if underLaunchd { _exit(1) }
+            }
+            DispatchQueue.main.async { queue.async { lastBeat = .now(); reported = false } }
+        }
+        timer.resume()
+        self.timer = timer
+    }
+    private static var timer: DispatchSourceTimer?
 }
 
 /// 登录时启动：~/Library/LaunchAgents 下的 LaunchAgent，崩溃后由 launchd 拉起并恢复显示器。
