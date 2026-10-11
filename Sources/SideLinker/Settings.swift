@@ -93,11 +93,7 @@ struct SettingsView: View {
             .frame(width: 210)
             Divider()
             VStack(alignment: .leading, spacing: 0) {
-                Text(pane?.rawValue ?? "")
-                    .font(.title2.bold())
-                    .padding(.horizontal, 30)
-                    .padding(.top, 40)
-                Form {
+                Form { // 页名在页首里，不再单独占一行标题
                     switch pane ?? .sidecar {
                     case .sidecar: sidecar
                     case .remote: remote
@@ -105,15 +101,22 @@ struct SettingsView: View {
                     }
                 }
                 .formStyle(.grouped)
+                .safeAreaPadding(.top, 28) // 让出标题栏
             }
         }
         .ignoresSafeArea()
-        .frame(minWidth: 640, minHeight: 480)
+        .frame(minWidth: 640, minHeight: 440)
     }
 
     // MARK: 随航
 
     @ViewBuilder private var sidecar: some View {
+        Section {
+            paneHeader(.sidecar, "Mac 接有显示器时照常使用系统随航；没有显示器时，登录后自动连接 iPad 作为唯一显示器") {
+                let connected = model.sidecarDevices.contains(where: \.connected)
+                status(connected, on: "已连接", off: "未连接")
+            }
+        }
         Section("附近的 iPad") {
             if model.sidecarDevices.isEmpty {
                 Text("未发现 iPad").foregroundStyle(.secondary)
@@ -159,13 +162,13 @@ struct SettingsView: View {
     // MARK: 远程连接
 
     @ViewBuilder private var remote: some View {
-        Section("状态") {
-            LabeledContent("UU 远程连接") {
-                status(model.uuConnected, on: "已连接", off: model.uuDetectable ? "未连接" : "无法检测")
+        Section {
+            paneHeader(.remote, "用 iPad 通过网易 UU 远程控制 Mac 时，以一块与 iPad 尺寸相同的虚拟显示器作为唯一屏幕") {
+                status(model.uuConnected, on: "UU 已连接", off: model.uuDetectable ? "UU 未连接" : "无法检测 UU")
             }
         }
         // 先选屏幕尺寸，再开启单屏；开启期间尺寸不可修改
-        Section("单屏显示") {
+        Section {
             Picker("屏幕尺寸", selection: Binding(get: { model.screenSize }, set: model.setScreenSize)) {
                 ForEach(ScreenSize.all) { size in
                     Text("\(size.name)　\(size.text)").tag(size)
@@ -178,7 +181,13 @@ struct SettingsView: View {
                      ?? "停用其他显示器，仅保留一块 \(model.screenSize.text) 的虚拟显示器")
             }
             .disabled(model.busy || !(model.uuConnected || model.remoteActive))
-            LabeledContent("紧急恢复物理显示器", value: AppDelegate.restoreShortcut)
+        } footer: {
+            Text(model.uuConnected || model.remoteActive
+                 ? "单屏开启期间，在 Mac 前按 \(AppDelegate.restoreShortcut) 可立即恢复物理显示器。UU 断开 30 秒后自动恢复并锁屏。"
+                 : "UU 连接后才能开启。单屏开启期间，在 Mac 前按 \(AppDelegate.restoreShortcut) 可立即恢复物理显示器。")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -186,12 +195,20 @@ struct SettingsView: View {
 
     @ViewBuilder private var general: some View {
         Section {
-            Toggle("登录时启动", isOn: binding(\.launchAtLogin, model.setLaunchAtLogin))
+            paneHeader(.general, "启动方式、功能介绍和运行日志") { EmptyView() }
         }
         Section {
-            LabeledContent("版本", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-")
+            Toggle(isOn: binding(\.launchAtLogin, model.setLaunchAtLogin)) {
+                Text("登录时启动")
+                Text("开机后自动运行；App 意外退出或无响应时由系统重新启动，并恢复显示器")
+            }
+        }
+        Section("帮助") {
             LabeledContent("功能介绍") {
                 Button("查看", action: model.showTour)
+            }
+            LabeledContent("运行日志") {
+                Button("在「控制台」中打开") { NSWorkspace.shared.open(Log.url) }
             }
         }
     }
@@ -212,6 +229,30 @@ struct SettingsView: View {
         .buttonStyle(.plain)
     }
 
+    /// 系统设置风格的页首：大号彩色图标、页名、一句说明，右侧放当前状态
+    private func paneHeader(_ pane: Pane, _ detail: String, @ViewBuilder trailing: () -> some View) -> some View {
+        HStack(spacing: 14) {
+            icon(pane, size: 44)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(pane.rawValue).font(.title3.weight(.semibold))
+                Text(detail).font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 12)
+            trailing()
+        }
+        .padding(.vertical, 6)
+    }
+
+    /// 彩色圆角方块里放白色图标；圆角和字号按方块大小等比缩放
+    private func icon(_ pane: Pane, size: CGFloat) -> some View {
+        Image(systemName: pane.symbol)
+            .font(.system(size: size * 0.55, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(pane.tint.gradient, in: RoundedRectangle(cornerRadius: size * 0.27, style: .continuous))
+    }
+
     /// 侧栏顶部：App 图标、名称和版本
     private var appHeader: some View {
         HStack(spacing: 10) {
@@ -229,11 +270,7 @@ struct SettingsView: View {
     /// 系统设置风格的侧栏行：彩色圆角方块里放白色图标，图标与文字垂直居中
     private func sidebarRow(_ pane: Pane) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: pane.symbol)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 22, height: 22)
-                .background(pane.tint.gradient, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            icon(pane, size: 22)
             Text(pane.rawValue)
         }
         .padding(.vertical, 2)
@@ -246,6 +283,7 @@ struct SettingsView: View {
             Circle().fill(on ? Color.green : Color.secondary.opacity(0.5)).frame(width: 8, height: 8)
             Text(on ? onText : offText).foregroundStyle(.secondary)
         }
+        .animation(.smooth(duration: 0.3), value: on)
     }
 
     private func tip(_ symbol: String, _ title: String, _ detail: String) -> some View {

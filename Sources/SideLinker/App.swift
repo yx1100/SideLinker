@@ -374,7 +374,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             window.isReleasedWhenClosed = false
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
-            window.setContentSize(NSSize(width: 700, height: 620))
+            window.setContentSize(NSSize(width: 700, height: 520))
             window.center()
             settingsWindow = window
         }
@@ -543,7 +543,7 @@ private final class SwitchRow: NSView {
 
 /// 运行日志：~/Library/Logs/SideLinker.log，可在「控制台」App 中查看。超过 1 MB 时改名为 SideLinker.old.log 重新开始
 enum Log {
-    private static let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/SideLinker.log")
+    static let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/SideLinker.log")
     private static let formatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
