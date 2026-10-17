@@ -65,6 +65,7 @@ A short introduction appears on first launch; its last page can turn on "登录�
 ## Emergency restore and log
 
 - While single-screen mode is on, press ⌃⌥⌘R at the Mac to restore the physical displays without looking at the screen
+- If a display is unplugged during single-screen mode, its position and resolution are kept for 24 hours and applied when it is plugged back in
 - The log at `~/Library/Logs/SideLinker.log` records UU connections, single-screen changes, locking and display configuration errors; open it in Console
 
 ## Command line

@@ -65,6 +65,7 @@ App 安装到 `/Applications/SideLinker.app` 并自动启动。`./build.sh relea
 ## 紧急恢复与日志
 
 - 单屏开启时，在 Mac 前按 ⌃⌥⌘R 立即恢复物理显示器，不需要看屏幕
+- 单屏期间拔掉的显示器，其位置和分辨率会保留 24 小时，重新接入后自动还原
 - 运行日志在 `~/Library/Logs/SideLinker.log`，记录 UU 连接和断开、单屏开启和恢复、锁屏、显示配置失败，可用「控制台」App 查看
 
 ## 命令行

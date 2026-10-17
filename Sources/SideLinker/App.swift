@@ -128,6 +128,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             enterRemote()
         } else if !gate.active && remoteApplied {
             exitRemote()
+        } else if !gate.active && !portable && Displays.pendingReady() {
+            restorePendingDisplays()
+        }
+    }
+
+    /// 单屏结束时没接回的显示器后来接上了：按记录还原它的位置和分辨率
+    private func restorePendingDisplays() {
+        busy = true
+        work.async {
+            Displays.restorePending()
+            DispatchQueue.main.async { self.busy = false }
         }
     }
 

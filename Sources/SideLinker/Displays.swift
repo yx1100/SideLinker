@@ -46,7 +46,10 @@ enum Session {
 
 /// 显示器配置。enterSingleScreen、restore、mirror 会轮询等待配置生效，只能在后台队列调用
 enum Displays {
-    private static let savedKey = "savedLayout" // [[displayID, x, y]]，非空表示有显示器被本 App 关闭
+    private static let savedKey = "savedLayout" // [[displayID, x, y, modeID]]，非空表示有显示器被本 App 关闭
+    private static let pendingKey = "pendingLayout" // 恢复时没有接回来的显示器的记录，接回后再按它还原
+    private static let pendingDateKey = "pendingLayoutDate"
+    private static let pendingLifetime: TimeInterval = 24 * 3600 // 超过一天不再套用：期间用户可能在系统设置里改过排列
 
     static var hasSavedLayout: Bool { UserDefaults.standard.array(forKey: savedKey) != nil }
     static func online() -> [CGDirectDisplayID] { list(CGGetOnlineDisplayList) }
@@ -72,6 +75,7 @@ enum Displays {
                 return [Int(id), Int(origin.x), Int(origin.y), Int(mode)]
             }
             UserDefaults.standard.set(layout, forKey: savedKey)
+            UserDefaults.standard.removeObject(forKey: pendingKey) // 新一轮单屏的记录取代旧的
         }
 
         configure { config in
@@ -111,11 +115,47 @@ enum Displays {
         }
         guard !saved.isEmpty else { return true }
         let present = saved.filter { online().contains(CGDirectDisplayID($0[0])) }
-        // 分辨率和位置一起设：只设位置时，系统会把 UU 在会话中改过的分辨率重新套用回来。设完核对一次，不对再设
+        applyLayout(present)
+        let missing = saved.filter { !present.contains($0) }
+        if missing.isEmpty {
+            UserDefaults.standard.removeObject(forKey: pendingKey)
+        } else {
+            // 显示器在远程期间被拔掉：保留它的记录，接回来时再还原位置和分辨率
+            UserDefaults.standard.set(missing, forKey: pendingKey)
+            UserDefaults.standard.set(Date(), forKey: pendingDateKey)
+            Log.write("有显示器未接回，保留布局记录：\(missing.map { $0[0] })")
+        }
+        UserDefaults.standard.removeObject(forKey: savedKey)
+        return true
+    }
+
+    /// 记录里有显示器已经重新接入，可以还原了。过期的记录在这里清掉
+    static func pendingReady() -> Bool {
+        guard let rows = UserDefaults.standard.array(forKey: pendingKey) as? [[Int]] else { return false }
+        if Date().timeIntervalSince(UserDefaults.standard.object(forKey: pendingDateKey) as? Date ?? .distantPast) > pendingLifetime {
+            UserDefaults.standard.removeObject(forKey: pendingKey)
+            return false
+        }
+        return rows.contains { online().contains(CGDirectDisplayID($0[0])) }
+    }
+
+    /// 把重新接入的显示器还原到记录的位置和分辨率，其余的继续保留。只能在后台队列调用
+    static func restorePending() {
+        let rows = UserDefaults.standard.array(forKey: pendingKey) as? [[Int]] ?? []
+        let back = rows.filter { online().contains(CGDirectDisplayID($0[0])) }
+        guard !back.isEmpty else { return }
+        applyLayout(back)
+        let rest = rows.filter { !back.contains($0) }
+        if rest.isEmpty { UserDefaults.standard.removeObject(forKey: pendingKey) } else { UserDefaults.standard.set(rest, forKey: pendingKey) }
+        Log.write("已按记录还原重新接入的显示器：\(back.map { $0[0] })")
+    }
+
+    /// 分辨率和位置一起设：只设位置时，系统会把 UU 在会话中改过的分辨率重新套用回来。设完核对一次，不对再设
+    private static func applyLayout(_ rows: [[Int]]) {
         var modesMatch = false
         for _ in 0..<2 {
             configure { config in
-                for row in present {
+                for row in rows {
                     let id = CGDirectDisplayID(row[0])
                     if row.count > 3, let mode = mode(of: id, withID: Int32(row[3])) {
                         CGConfigureDisplayWithDisplayMode(config, id, mode, nil)
@@ -124,14 +164,12 @@ enum Displays {
                 }
             }
             Thread.sleep(forTimeInterval: 3)
-            modesMatch = present.allSatisfy {
+            modesMatch = rows.allSatisfy {
                 $0.count <= 3 || $0[3] < 0 || CGDisplayCopyDisplayMode(CGDirectDisplayID($0[0]))?.ioDisplayModeID == Int32($0[3])
             }
             if modesMatch { break }
         }
         if !modesMatch { Log.write("有显示器的分辨率未能还原") }
-        UserDefaults.standard.removeObject(forKey: savedKey)
-        return true
     }
 
     /// 把 display 设为 master 的镜像；master 传 kCGNullDirectDisplay 取消镜像
