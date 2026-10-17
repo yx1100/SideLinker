@@ -31,6 +31,13 @@ final class SettingsModel: ObservableObject {
 
     @Published var sidecarDevices: [Device] = []
     @Published var autoConnect = true
+    struct Attempt: Equatable {
+        let date: Date
+        let ok: Bool
+        let failures: Int // 连续失败次数
+    }
+
+    @Published var sidecarAttempt: Attempt?
     @Published var sidecarBusy = false // 正在连接或断开，或单屏显示中：随航按钮不可用
     @Published var uuConnected = false
     @Published var uuDetectable = true
@@ -132,6 +139,12 @@ struct SettingsView: View {
                     }
                 } label: {
                     Label(device.name, systemImage: "ipad.landscape")
+                }
+            }
+            if let attempt = model.sidecarAttempt {
+                LabeledContent("上次连接尝试") {
+                    Text("\(attempt.date.formatted(date: .omitted, time: .standard)) · " + (attempt.ok ? "成功" : "已连续失败 \(attempt.failures) 次"))
+                        .foregroundStyle(attempt.ok ? Color.secondary : Color.orange)
                 }
             }
         }

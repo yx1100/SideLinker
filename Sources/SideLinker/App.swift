@@ -31,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var nextAttempt = Date.distantPast
     private var connecting = false
     private var disconnecting = false // connecting 为真时，正在做的是断开
+    private var sidecarAttempt: SettingsModel.Attempt? // 最近一次连接尝试，自动和手动都记
     private var manualDisconnect = false // 用户在无显示器时主动断开随航：不再自动重连，直到有显示器或用户再次连接
 
     private let model = SettingsModel()
@@ -273,6 +274,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 // 前 2 分钟每 5 秒重试，之后每 30 秒
                 self.nextAttempt = Date() + (Date().timeIntervalSince(self.portableSince) < 120 ? 5 : 30)
                 Log.write(connected.map { "随航已连接：\(Sidecar.name($0))" } ?? "随航连接失败，稍后重试")
+                self.recordSidecarAttempt(ok: connected != nil)
+                if connected == nil, self.sidecarAttempt?.failures == 3 { // 每轮失败只提醒一次
+                    self.notify("随航已连续 3 次连接失败。请检查：Mac 和 iPad 登录同一 Apple 账户，两台设备都打开 Wi-Fi、蓝牙和接力，iPad 关闭个人热点并保持解锁、靠近 Mac。")
+                }
                 if let connected {
                     self.defaults.set(Sidecar.identifier(connected), forKey: "preferredDevice")
                     self.notify("随航已连接：\(Sidecar.name(connected))")
@@ -327,7 +332,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             status.append(info("远程连接已建立", symbol: "display"))
         }
         if status.isEmpty {
-            status.append(info(connecting ? (disconnecting ? "正在断开随航…" : "正在连接随航…") : portable ? "正在等待 iPad" : "未建立连接"))
+            let failures = sidecarAttempt?.failures ?? 0
+            status.append(info(connecting ? (disconnecting ? "正在断开随航…" : "正在连接随航…") : portable ? "正在等待 iPad" : "未建立连接",
+                               detail: portable && !connecting && failures > 0 ? "已连续失败 \(failures) 次，将自动重试" : ""))
         }
         status.forEach(menu.addItem)
 
@@ -383,6 +390,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// 手动连接或断开一台 iPad 的随航。连接和断开都会阻塞，放在后台队列
+    private func recordSidecarAttempt(ok: Bool) {
+        sidecarAttempt = .init(date: Date(), ok: ok, failures: ok ? 0 : (sidecarAttempt?.failures ?? 0) + 1)
+    }
+
     private func toggleSidecar(_ id: String) {
         guard !connecting, !remoteApplied, let device = Sidecar.devices().first(where: { Sidecar.identifier($0) == id }) else { return }
         let name = Sidecar.name(device)
@@ -397,6 +408,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.async {
                 self.connecting = false
                 self.disconnecting = false
+                if !wasConnected { self.recordSidecarAttempt(ok: ok) }
                 if !ok {
                     Log.write("手动\(wasConnected ? "断开" : "连接")随航失败：\(name)")
                     self.notify("\(wasConnected ? "断开" : "连接")随航失败：\(name)")
@@ -472,6 +484,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         })
         update(\.autoConnect, autoEnabled)
         update(\.sidecarBusy, connecting || remoteApplied)
+        update(\.sidecarAttempt, sidecarAttempt)
         update(\.uuConnected, uu.connected)
         update(\.uuDetectable, uu.detectable)
         update(\.remoteActive, gate.active)
