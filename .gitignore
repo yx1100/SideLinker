@@ -38,3 +38,5 @@ Icon
 Pods/
 # 如果你使用 Carthage
 Carthage/Build/
+AGENTS.md
+app-rea/
