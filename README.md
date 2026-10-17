@@ -46,13 +46,13 @@ A short introduction appears on first launch; its last page can turn on "登录�
 **Menu bar**
 
 - The top section lists the connections currently established
-- The Sidecar section lists the connected iPad
+- The Sidecar section lists nearby iPads; click one to connect or disconnect
 - While a remote connection is active, a switch turns "使用 iPad 单屏显示" on or off
 - "设置…" opens the settings window
 
 **Settings window**
 
-- Sidecar: nearby iPads and their status, the "connect automatically when no display is attached" switch, and notes on wireless Sidecar and headless startup
+- Sidecar: nearby iPads with their status and connect/disconnect buttons, the "connect automatically when no display is attached" switch, and notes on wireless Sidecar and headless startup
 - Remote connection: UU status; choose the screen size of the virtual display, then turn on "使用 iPad 单屏显示". The status reads "无法检测" (cannot detect) when UU is not running and its session log is missing
 - General: Launch at Login, the introduction, and a button that opens the log in Console
 

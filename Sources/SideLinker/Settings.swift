@@ -31,6 +31,7 @@ final class SettingsModel: ObservableObject {
 
     @Published var sidecarDevices: [Device] = []
     @Published var autoConnect = true
+    @Published var sidecarBusy = false // 正在连接或断开，或单屏显示中：随航按钮不可用
     @Published var uuConnected = false
     @Published var uuDetectable = true
     @Published var remoteActive = false
@@ -41,6 +42,7 @@ final class SettingsModel: ObservableObject {
 
     var setAutoConnect: (Bool) -> Void = { _ in }
     var toggleRemote: () -> Void = {}
+    var toggleSidecar: (String) -> Void = { _ in }
     var setScreenSize: (ScreenSize) -> Void = { _ in }
     var setLaunchAtLogin: (Bool) -> Void = { _ in }
     var showTour: () -> Void = {}
@@ -123,7 +125,11 @@ struct SettingsView: View {
             }
             ForEach(model.sidecarDevices) { device in
                 LabeledContent {
-                    status(device.connected, on: "已连接", off: "未连接")
+                    HStack(spacing: 12) {
+                        status(device.connected, on: "已连接", off: "未连接")
+                        Button(device.connected ? "断开" : "连接") { model.toggleSidecar(device.id) }
+                            .disabled(model.sidecarBusy)
+                    }
                 } label: {
                     Label(device.name, systemImage: "ipad.landscape")
                 }

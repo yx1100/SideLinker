@@ -30,6 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var portableSince = Date()
     private var nextAttempt = Date.distantPast
     private var connecting = false
+    private var disconnecting = false // connecting 为真时，正在做的是断开
+    private var manualDisconnect = false // 用户在无显示器时主动断开随航：不再自动重连，直到有显示器或用户再次连接
 
     private let model = SettingsModel()
     private var settingsWindow: NSWindow?
@@ -202,6 +204,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard !busy, !connecting, !gate.active, !remoteApplied else { return }
         let sidecarOn = !Sidecar.connected().isEmpty
         let displays = Set(Displays.online()).subtracting([dummy?.id, remoteScreen?.id].compactMap { $0 })
+        if manualDisconnect {
+            if portable { leavePortable() }
+            if !displays.isEmpty { manualDisconnect = false }
+            return
+        }
 
         guard portable else {
             // 随航未连接，且除本 App 的虚拟屏外没有任何显示器
@@ -320,13 +327,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             status.append(info("远程连接已建立", symbol: "display"))
         }
         if status.isEmpty {
-            status.append(info(connecting ? "正在连接随航…" : portable ? "正在等待 iPad" : "未建立连接"))
+            status.append(info(connecting ? (disconnecting ? "正在断开随航…" : "正在连接随航…") : portable ? "正在等待 iPad" : "未建立连接"))
         }
         status.forEach(menu.addItem)
 
         menu.addItem(.separator())
-        menu.addItem(.sectionHeader(title: sidecar.isEmpty ? "随航 · 未连接" : "随航 · 已连接"))
-        for device in sidecar { menu.addItem(info(device.name, symbol: "ipad.landscape.badge.play")) }
+        menu.addItem(.sectionHeader(title: connecting ? "随航 · " + (disconnecting ? "正在断开…" : "正在连接…")
+                                    : sidecar.isEmpty ? "随航 · 未连接" : "随航 · 已连接"))
+        // 单屏显示期间物理屏已停用，此时再接随航会打乱恢复，不提供操作
+        for device in model.sidecarDevices {
+            let item = NSMenuItem(title: (device.connected ? "断开 " : "连接 ") + device.name,
+                                  action: #selector(sidecarItemClicked(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = device.id
+            item.isEnabled = !connecting && !remoteApplied
+            item.image = NSImage(systemSymbolName: device.connected ? "ipad.landscape.badge.play" : "ipad.landscape", accessibilityDescription: nil)
+            menu.addItem(item)
+        }
 
         menu.addItem(.separator())
         menu.addItem(.sectionHeader(title: "远程连接 · " + (uu.connected ? "已连接" : uu.detectable ? "未连接" : "无法检测")))
@@ -359,6 +376,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         previousApp = nil
         // 菜单项的动作在关闭后才执行：点了「设置…」时保持在前台
         DispatchQueue.main.async { if self.settingsWindow?.isKeyWindow != true { app?.activate() } }
+    }
+
+    @objc private func sidecarItemClicked(_ item: NSMenuItem) {
+        if let id = item.representedObject as? String { toggleSidecar(id) }
+    }
+
+    /// 手动连接或断开一台 iPad 的随航。连接和断开都会阻塞，放在后台队列
+    private func toggleSidecar(_ id: String) {
+        guard !connecting, !remoteApplied, let device = Sidecar.devices().first(where: { Sidecar.identifier($0) == id }) else { return }
+        let name = Sidecar.name(device)
+        let wasConnected = Sidecar.connected().contains { Sidecar.identifier($0) == id }
+        connecting = true
+        disconnecting = wasConnected
+        manualDisconnect = wasConnected
+        Log.write("手动\(wasConnected ? "断开" : "连接")随航：\(name)")
+        refreshIcon()
+        work.async {
+            let ok = wasConnected ? Sidecar.disconnect(device) : Sidecar.connectFirst(of: [device]) != nil
+            DispatchQueue.main.async {
+                self.connecting = false
+                self.disconnecting = false
+                if !ok {
+                    Log.write("手动\(wasConnected ? "断开" : "连接")随航失败：\(name)")
+                    self.notify("\(wasConnected ? "断开" : "连接")随航失败：\(name)")
+                } else if !wasConnected {
+                    self.defaults.set(id, forKey: "preferredDevice")
+                }
+                self.refreshIcon()
+                self.publish()
+            }
+        }
     }
 
     @objc private func toggleRemote() {
@@ -423,6 +471,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .init(id: Sidecar.identifier($0), name: Sidecar.name($0), connected: connectedIDs.contains(Sidecar.identifier($0)))
         })
         update(\.autoConnect, autoEnabled)
+        update(\.sidecarBusy, connecting || remoteApplied)
         update(\.uuConnected, uu.connected)
         update(\.uuDetectable, uu.detectable)
         update(\.remoteActive, gate.active)
@@ -469,6 +518,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if !on { leavePortable() }
             publish()
         }
+        model.toggleSidecar = { [weak self] id in self?.toggleSidecar(id) }
         model.toggleRemote = { [weak self] in
             guard let self else { return }
             if gate.active {

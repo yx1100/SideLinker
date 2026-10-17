@@ -23,6 +23,11 @@ if [[ "${1:-}" == release ]]; then
 fi
 
 if [[ "${1:-}" == install ]]; then
+  # 单屏显示开启时物理显示器是关着的，重装会让旧进程退出并恢复它们，正在远程的画面会被打断
+  if defaults read com.yx1100.sidelinker savedLayout >/dev/null 2>&1; then
+    echo "单屏显示正在使用中，请先关闭后再安装" >&2
+    exit 1
+  fi
   # 退出旧进程：单屏开启时它要先恢复物理显示器，可能需要几十秒，等它完全退出再启动新版，
   # 否则 open 只会唤起还没退出的旧进程
   if pkill -x SideLinker; then
